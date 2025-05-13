@@ -3,18 +3,24 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Calendar, Clock, MapPin, AlertCircle, ChevronRight, Search } from "lucide-react"
+import { Calendar, Clock, MapPin, AlertCircle, ChevronRight, Search, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { createClient } from "@supabase/supabase-js"
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export default function BookingsPage() {
   const [appointments, setAppointments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const user = useUser()
-  const supabase = useSupabaseClient()
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [cancelDialogId, setCancelDialogId] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchAppointments() {
@@ -24,28 +30,62 @@ export default function BookingsPage() {
         setLoading(false)
         return
       }
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("*, pets(name, image, type)")
-        .eq("pet_owner_id", user.id)
-        .order("created_at", { ascending: false })
-      if (error) {
-        console.error("Error fetching appointments:", error)
-        setAppointments([])
-      } else {
-        setAppointments(data || [])
+
+      console.log("Fetching appointments for user:", user.id);
+      
+      try {
+        // Use explicit join syntax for better reliability
+        const { data, error } = await supabase
+          .from("appointments")
+          .select(`
+            *,
+            pets:pet_id (
+              id, 
+              name, 
+              image, 
+              type
+            )
+          `)
+          .eq("pet_owner_id", user.id)
+          .order("created_at", { ascending: false });
+          
+        if (error) {
+          console.error("Error fetching appointments:", error);
+          setAppointments([]);
+        } else {
+          console.log("Fetched appointments:", data);
+          setAppointments(data || []);
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        setAppointments([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false)
     }
-    fetchAppointments()
-  }, [user])
+    
+    fetchAppointments();
+  }, [user, supabase]);
+
+  useEffect(() => {
+    if (appointments.length > 0) {
+      console.log("Example appointment data:", appointments[0]);
+      if (appointments[0].pets) {
+        console.log("Pet data:", appointments[0].pets);
+      } else {
+        console.log("No pet data found in appointment");
+      }
+    }
+  }, [appointments]);
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "pending_vet":
-        return { label: "Waiting for vet", color: "bg-yellow-100 text-yellow-800" }
+      case "pending":
+        return { label: "Pending", color: "bg-blue-100 text-blue-800" }
       case "confirmed":
         return { label: "Confirmed", color: "bg-green-100 text-green-800" }
+      case "pending_vet":
+        return { label: "Waiting for vet", color: "bg-yellow-100 text-yellow-800" }
       case "rescheduled":
         return { label: "Rescheduled", color: "bg-blue-100 text-blue-800" }
       case "completed":
@@ -53,7 +93,7 @@ export default function BookingsPage() {
       case "cancelled":
         return { label: "Cancelled", color: "bg-red-100 text-red-800" }
       default:
-        return { label: "Unknown", color: "bg-gray-100 text-gray-800" }
+        return { label: status || "Unknown", color: "bg-gray-100 text-gray-800" }
     }
   }
 
@@ -65,7 +105,10 @@ export default function BookingsPage() {
   )
 
   const upcomingAppointments = filteredAppointments.filter(
-    (appointment) => appointment.status !== "completed" && appointment.status !== "cancelled"
+    (appointment) => appointment.status === "pending" || 
+                     appointment.status === "confirmed" || 
+                     appointment.status === "pending_vet" || 
+                     appointment.status === "rescheduled"
   )
 
   const pastAppointments = filteredAppointments.filter(
@@ -82,34 +125,112 @@ export default function BookingsPage() {
     alert(`In a real app, this would decline the vet's proposed time for appointment ${id}.`)
   }
 
+  // Helper function to parse and format services
+  const formatServices = (servicesData: any) => {
+    if (!servicesData) return [];
+    try {
+      const services = typeof servicesData === 'string' 
+        ? JSON.parse(servicesData) 
+        : servicesData;
+      return Array.isArray(services) ? services : [];
+    } catch (e) {
+      console.error('Error parsing services:', e);
+      return [];
+    }
+  };
+
+  // Helper function to render service tags with unique keys
+  const renderServiceTags = (services: any, appointmentId: string) => {
+    if (!services) return null;
+    try {
+      const serviceIds = typeof services === 'string' 
+        ? JSON.parse(services) 
+        : services;
+      if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
+        return null;
+      }
+      const serviceMap = {
+        '1': 'After hours home visit',
+        '2': 'At-Home Peaceful Euthanasia',
+      };
+      return (
+        <div className="flex flex-wrap gap-2 mt-1">
+          {serviceIds.map((serviceId: string, index: number) => {
+            const label = (serviceId === '1' || serviceId === '2') ? serviceMap[serviceId] : `Service ${serviceId}`;
+            return (
+              <span 
+                key={`service-${appointmentId}-${serviceId}-${index}`} 
+                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800"
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      );
+    } catch (e) {
+      console.error('Error rendering services:', e);
+      return null;
+    }
+  };
+
   const renderAppointmentCard = (appointment: any) => {
     const status = getStatusLabel(appointment.status)
-
+    const serviceNameMap: Record<string, string> = {
+      '1': 'After hours home visit',
+      '2': 'At-Home Peaceful Euthanasia',
+    };
+    const services = formatServices(appointment.services);
+    // Pet info fallbacks
+    let petName = "Unknown Pet";
+    let petType = "";
+    if (appointment.pets && typeof appointment.pets === 'object') {
+      if ('name' in appointment.pets && appointment.pets.name) {
+        petName = appointment.pets.name;
+      } else if (Object.keys(appointment.pets).length === 0) {
+        petName = "Unknown Pet";
+      } else {
+        petName = "Pet";
+      }
+      if ('type' in appointment.pets && appointment.pets.type) {
+        petType = appointment.pets.type;
+      }
+    }
+    const petImage = appointment.pets?.image || null;
+    const appointmentDate = appointment.date ? new Date(appointment.date).toLocaleDateString() : "Date not specified";
+    const appointmentTime = appointment.time_slot || "Time not specified";
+    const paymentAmount = appointment.total_price ? `$${appointment.total_price}` : "N/A";
     return (
       <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-6">
         {/* Appointment Header */}
         <div className="p-6 border-b">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                <Image
-                  src={appointment.pets?.image || "/placeholder.svg"}
-                  alt={appointment.pets?.name || "Pet"}
-                  width={48}
-                  height={48}
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-gray-200">
+                {petImage ? (
+                  <Image
+                    src={petImage}
+                    alt={petName}
+                    width={48}
+                    height={48}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    <span>No img</span>
+                  </div>
+                )}
               </div>
               <div>
-                <h2 className="font-semibold text-lg">{appointment.service_title || "Appointment"}</h2>
-                <p className="text-gray-600">
-                  For {appointment.pets?.name} ({appointment.pets?.type})
-                </p>
+                <h2 className="font-semibold text-lg">{petName}</h2>
+                <p className="text-gray-600">{petType || "Pet"}</p>
+                {/* Service tags */}
+                {appointment.services && renderServiceTags(appointment.services, appointment.id)}
               </div>
             </div>
             <div className="flex items-center gap-3">
               <span className={`px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>{status.label}</span>
-              <span className="text-gray-500 text-sm">#{appointment.id}</span>
+              <span className="text-gray-500 text-sm">#{appointment.id.substring(0, 8)}</span>
             </div>
           </div>
         </div>
@@ -121,14 +242,14 @@ export default function BookingsPage() {
               <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
               <div>
                 <p className="font-medium">Date</p>
-                <p className="text-gray-600">{appointment.date}</p>
+                <p className="text-gray-600">{appointmentDate}</p>
               </div>
             </div>
             <div className="flex items-start">
               <Clock className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
               <div>
                 <p className="font-medium">Time</p>
-                <p className="text-gray-600">{appointment.time}</p>
+                <p className="text-gray-600">{appointmentTime}</p>
               </div>
             </div>
           </div>
@@ -137,7 +258,7 @@ export default function BookingsPage() {
               <MapPin className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
               <div>
                 <p className="font-medium">Address</p>
-                <p className="text-gray-600">{appointment.address}</p>
+                <p className="text-gray-600">{appointment.address || "Address not specified"}</p>
                 {appointment.notes && <p className="text-gray-600 text-sm">{appointment.notes}</p>}
               </div>
             </div>
@@ -146,10 +267,33 @@ export default function BookingsPage() {
               <div>
                 <p className="font-medium">Payment</p>
                 <p className="text-gray-600">Status: {appointment.payment_status || "N/A"}</p>
-                <p className="text-gray-600">Amount: {appointment.payment_amount ? `$${appointment.payment_amount}` : "N/A"}</p>
+                <p className="text-gray-600">Amount: {paymentAmount}</p>
                 <p className="text-gray-600">Method: {appointment.payment_method || "N/A"}</p>
                 {appointment.payment_id && (
-                  <p className="text-gray-500 text-xs mt-1">Transaction ID: {appointment.payment_id}</p>
+                  <div className="mt-1">
+                    <p className="text-xs text-gray-500 font-medium mb-1">Transaction ID:</p>
+                    <div className="bg-gray-100 p-2 rounded-md overflow-hidden flex items-center">
+                      <code className="text-xs text-gray-600 font-mono overflow-hidden truncate mr-2 flex-1">
+                        {appointment.payment_id}
+                      </code>
+                      <button
+                        className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(appointment.payment_id);
+                          setCopiedId(appointment.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        }}
+                        title="Copy transaction ID"
+                      >
+                        {copiedId === appointment.id ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -204,13 +348,57 @@ export default function BookingsPage() {
             </Button>
             <div className="flex flex-wrap gap-3">
               {appointment.status !== "completed" && appointment.status !== "cancelled" && (
-                <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                  Cancel appointment
-                </Button>
+                <>
+                  <Button 
+                    variant="outline" 
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={async () => {
+                      if (!user) return;
+                      if (window.confirm("Are you sure you want to cancel this appointment? This cannot be undone.")) {
+                        try {
+                          setLoading(true);
+                          const { error } = await supabase
+                            .from('appointments')
+                            .update({ status: 'cancelled' })
+                            .eq('id', appointment.id);
+                          if (error) {
+                            console.error("Error cancelling appointment:", error);
+                            alert("Failed to cancel appointment. Please try again.");
+                          } else {
+                            // Refresh appointments after cancellation with explicit join
+                            if (!user) return;
+                            const { data, error: fetchError } = await supabase
+                              .from("appointments")
+                              .select(`
+                                *,
+                                pets:pet_id (
+                                  id, 
+                                  name, 
+                                  image, 
+                                  type
+                                )
+                              `)
+                              .eq("pet_owner_id", user.id)
+                              .order("created_at", { ascending: false });
+                            if (fetchError) {
+                              console.error("Error refreshing appointments:", fetchError);
+                            } else {
+                              setAppointments(data || []);
+                            }
+                          }
+                        } catch (err) {
+                          console.error("Error in cancellation:", err);
+                          alert("An unexpected error occurred. Please try again.");
+                        } finally {
+                          setLoading(false);
+                        }
+                      }
+                    }}
+                  >
+                    Yes, cancel it
+                  </Button>
+                </>
               )}
-              <Button className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]">
-                View details
-              </Button>
             </div>
           </div>
         </div>
