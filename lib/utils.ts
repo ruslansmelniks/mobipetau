@@ -6,11 +6,16 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function redirectBasedOnRole(role: string | undefined, router: any) {
+  console.log("redirectBasedOnRole called with role:", role);
+  
   if (role === 'vet') {
     router.push('/vet');
   } else if (role === 'pet_owner') {
+    console.log("Redirecting to pet owner portal");
     router.push('/portal/bookings');
   } else {
-    router.push('/'); // fallback
+    console.log("No valid role found, defaulting to home page");
+    // If no recognized role, default to pet owner portal
+    router.push('/portal/bookings');
   }
 }

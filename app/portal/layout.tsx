@@ -7,6 +7,7 @@ import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
 import { useState } from "react"
+import { SmartLogo } from "@/components/smart-logo"
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const [hasNotifications, setHasNotifications] = useState(true)
@@ -16,9 +17,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex justify-between items-center">
-            <Link href="/" className="flex items-center">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
-            </Link>
+            <SmartLogo />
             <div className="flex items-center gap-4">
               <button
                 className={`w-10 h-10 rounded-full flex items-center justify-center relative ${
