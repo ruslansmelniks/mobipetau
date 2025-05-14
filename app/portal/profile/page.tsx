@@ -1,186 +1,144 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle } from "lucide-react"
-import { useUser, useSupabaseClient, useSessionContext } from "@supabase/auth-helpers-react"
+import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { useRouter } from "next/navigation"
+import { ProfileFormData, UserProfile } from "@/types"
 
 export default function ProfilePage() {
-  console.log('ProfilePage component loaded')
-  const { isLoading } = useSessionContext();
-  const user = useUser();
-  const supabase = useSupabaseClient();
-  const [formData, setFormData] = useState<any | null>(null)
+  const [formData, setFormData] = useState<ProfileFormData | null>(null)
   const [isEditing, setIsEditing] = useState(false)
-  const [profileComplete, setProfileComplete] = useState(false)
   const [loading, setLoading] = useState(true)
-
-  // Minimal profile form state (always defined at top level)
-  const [formState, setFormState] = useState({ first_name: "", last_name: "", phone: "" })
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState("")
-  const [submitSuccess, setSubmitSuccess] = useState(false)
-
-  const [showDraftBanner, setShowDraftBanner] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
-
-  const handleMinimalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormState((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const fetchProfile = async () => {
-    if (!user) return;
-    try {
-      let { data, error } = await supabase
-        .from("users")
-        .select("first_name, last_name, email, phone, address, city, state, postal_code, emergency_contact, emergency_phone, additional_info")
-        .eq("id", user.id)
-        .maybeSingle();
-      console.log("Profile fetch result", { data, error });
-      if (!data) {
-        // Only try to insert if error is not a permissions error
-        if (error && error.code === '42501') { // insufficient_privilege
-          setFormData(null);
-          setLoading(false);
-          setSubmitError("You do not have permission to view your profile. Please contact support.");
-          return;
-        }
-        // Row missing: insert fallback
-        const { error: insertError } = await supabase.from("users").insert({
-          id: user.id,
-          email: user.email,
-          first_name: user.user_metadata?.first_name || "",
-          last_name: user.user_metadata?.last_name || "",
-          phone: user.user_metadata?.phone || "",
-          role: "pet_owner",
-          created_at: new Date().toISOString(),
-        });
-        if (insertError) {
-          if (insertError.code === '409') {
-            // Row already exists, fetch again
-            ({ data, error } = await supabase
-              .from("users")
-              .select("first_name, last_name, email, phone, address, city, state, postal_code, emergency_contact, emergency_phone, additional_info")
-              .eq("id", user.id)
-              .maybeSingle());
-            if (data) {
-              setFormData(data);
-              setLoading(false);
-              return;
-            }
-          }
-          setFormData(null);
-          setLoading(false);
-          setSubmitError("Could not create your profile. Please try reloading the page or contact support if the problem persists.");
-          return;
-        }
-        // Try fetching again
-        ({ data, error } = await supabase
-          .from("users")
-          .select("first_name, last_name, email, phone, address, city, state, postal_code, emergency_contact, emergency_phone, additional_info")
-          .eq("id", user.id)
-          .maybeSingle());
-      }
-      if (error) {
-        setFormData(null);
-        setLoading(false);
-        setSubmitError("Could not load your profile. Please try reloading the page or contact support if the problem persists.");
-        return;
-      }
-      setFormData(data);
-    } catch (error) {
-      setFormData(null);
-      setSubmitError("Unexpected error loading profile. Please try reloading the page or contact support.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [supabase] = useState(() => createPagesBrowserClient())
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
-    console.log("Profile useEffect running", { user });
-    if (!user) {
-      console.log("No user found, returning early");
-      return;
-    }
-    setLoading(true);
-    console.log("Fetching profile for user:", user.id);
-    fetchProfile();
-  }, [user]);
+    const fetchUserProfile = async () => {
+      setLoading(true)
+      setMessage(null)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-  useEffect(() => {
-    if (!user) return;
-    const checkDraft = async () => {
-      const { data: draft } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('pet_owner_id', user.id)
-        // .eq('status', 'pending') // TEMP: remove status filter for debugging
-        .maybeSingle();
-      if (draft) {
-        setShowDraftBanner(true);
-        setDraftId(draft.id);
+      if (userError) {
+        console.error("Error fetching user:", userError)
+        setMessage({ type: 'error', text: 'Could not fetch user profile. Please try again.' })
+        setLoading(false)
+        return
       }
-    };
-    checkDraft();
-  }, [user]);
+
+      if (!user) {
+        console.log("No user found, redirecting to login.")
+        router.push('/login')
+        return
+      }
+      
+      const initialFormData: ProfileFormData = {
+        email: user.email || '',
+        first_name: user.user_metadata?.first_name || '',
+        last_name: user.user_metadata?.last_name || '',
+        phone: user.user_metadata?.phone || '',
+        address: user.user_metadata?.address || '',
+        city: user.user_metadata?.city || '',
+        state: user.user_metadata?.state || '',
+        postal_code: user.user_metadata?.postal_code || '',
+        emergency_contact: user.user_metadata?.emergency_contact || '',
+        emergency_phone: user.user_metadata?.emergency_phone || '',
+        additional_info: user.user_metadata?.additional_info || ''
+      }
+      
+      setFormData(initialFormData)
+      setLoading(false)
+    }
+
+    fetchUserProfile()
+  }, [supabase, router])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData((prev: any) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData(prev => prev ? { ...prev, [name]: value } as ProfileFormData : null)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // In a real app, you would save the data to your backend here
-    setIsEditing(false)
-    alert("Profile updated successfully!")
-  }
+    setMessage(null)
+    if (!formData) {
+      setMessage({ type: 'error', text: 'Form data is missing.' })
+      return
+    }
 
-  if (isLoading) {
-    return <div className="max-w-3xl mx-auto py-12 text-center text-gray-500">Loading session...</div>;
+    setLoading(true)
+
+    const { email, ...userMetadata }: ProfileFormData = formData
+
+    const updatePayload: { email?: string; data: Partial<UserProfile> } = {
+      data: { ...userMetadata }
+    }
+
+    const currentUserEmail = (await supabase.auth.getUser()).data.user?.email
+    if (email && email !== currentUserEmail) {
+      updatePayload.email = email
+    }
+    
+    const { data, error } = await supabase.auth.updateUser(updatePayload)
+
+    setLoading(false)
+
+    if (error) {
+      console.error("Error updating profile:", error)
+      setMessage({ type: 'error', text: error.message || "Failed to update profile. Please try again." })
+    } else {
+      setMessage({ type: 'success', text: "Profile updated successfully!" })
+      setIsEditing(false)
+    }
   }
 
   if (loading) {
     return <div className="max-w-3xl mx-auto py-12 text-center text-gray-500">Loading...</div>
   }
 
-  if (!formData) {
+  if (!formData && !loading) {
     return (
       <div className="max-w-3xl mx-auto py-12 text-center">
-        <h2 className="text-2xl font-bold mb-4">Could not load your profile</h2>
-        <p className="mb-6 text-gray-600">{submitError || "Please try reloading the page or contact support if the problem persists."}</p>
+        <h2 className="text-2xl font-bold mb-4">Profile Not Found</h2>
+        <p className="mb-6 text-gray-600">Could not load profile data. Please try logging in again.</p>
+        {message && (
+          <div className={`my-4 p-3 rounded-md text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+            {message.text}
+          </div>
+        )}
+        <Button onClick={() => router.push('/login')}>Go to Login</Button>
+      </div>
+    )
+  }
+  
+  if (!formData) {
+     return (
+      <div className="max-w-3xl mx-auto py-12 text-center text-gray-500">
+        Error loading profile. Please refresh or try logging in again.
+         {message && (
+          <div className={`my-4 p-3 rounded-md text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+            {message.text}
+          </div>
+        )}
       </div>
     )
   }
 
   return (
     <div className="max-w-3xl mx-auto">
-      {showDraftBanner && (
-        <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded mb-6 flex items-center justify-between">
-          <span>You have an incomplete booking. Would you like to resume or discard it?</span>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => window.location.href = '/book'}>Resume</Button>
-            <Button variant="destructive" onClick={async () => {
-              if (draftId) {
-                await supabase.from('appointments').delete().eq('id', draftId);
-                setShowDraftBanner(false);
-              }
-            }}>Discard</Button>
-          </div>
+      <h1 className="text-3xl font-bold mb-6">My Profile</h1>
+      
+      {message && (
+        <div className={`mb-6 p-4 rounded-md text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-green-100 text-green-700 border border-green-200'}`}>
+          {message.text}
         </div>
       )}
-      <h1 className="text-3xl font-bold mb-6">My Profile</h1>
-
+      
       <Card>
         <CardHeader>
           <CardTitle>Personal Information</CardTitle>
@@ -249,7 +207,6 @@ export default function ProfilePage() {
                 value={formData.address || ""}
                 onChange={handleChange}
                 disabled={!isEditing}
-                required
               />
             </div>
 
@@ -262,7 +219,6 @@ export default function ProfilePage() {
                   value={formData.city || ""}
                   onChange={handleChange}
                   disabled={!isEditing}
-                  required
                 />
               </div>
               <div className="space-y-2">
@@ -273,7 +229,6 @@ export default function ProfilePage() {
                   value={formData.state || ""}
                   onChange={handleChange}
                   disabled={!isEditing}
-                  required
                 />
               </div>
               <div className="space-y-2">
@@ -284,7 +239,6 @@ export default function ProfilePage() {
                   value={formData.postal_code || ""}
                   onChange={handleChange}
                   disabled={!isEditing}
-                  required
                 />
               </div>
             </div>
@@ -331,20 +285,27 @@ export default function ProfilePage() {
           <CardFooter className="flex justify-between">
             {isEditing ? (
               <>
-                <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
+                <Button type="button" variant="outline" onClick={() => {
+                  setIsEditing(false)
+                  setMessage(null)
+                }}>
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+                  disabled={loading}
                 >
-                  Save Changes
+                  {loading ? 'Saving...' : 'Save Changes'}
                 </Button>
               </>
             ) : (
               <Button
                 type="button"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setIsEditing(true)
+                  setMessage(null)
+                }}
                 className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
               >
                 Edit Profile

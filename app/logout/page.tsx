@@ -11,7 +11,6 @@ export default function LogoutPage() {
   useEffect(() => {
     async function signOut() {
       await supabase.auth.signOut();
-      localStorage.removeItem('mobipet_login_success');
       router.push('/');
     }
     signOut();

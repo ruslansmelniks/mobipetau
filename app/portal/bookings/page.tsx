@@ -8,17 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
-import { createClient } from "@supabase/supabase-js"
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { Appointment, UserData } from "@/types" // Import the types we created
 
 export default function BookingsPage() {
-  const [appointments, setAppointments] = useState<any[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const user = useUser()
+  const user = useUser() as UserData | null
+  const supabase = useSupabaseClient() // Use the hook instead of creating a manual client
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [cancelDialogId, setCancelDialogId] = useState<string | null>(null)
 
@@ -174,32 +171,16 @@ export default function BookingsPage() {
     }
   };
 
-  const renderAppointmentCard = (appointment: any) => {
-    const status = getStatusLabel(appointment.status)
-    const serviceNameMap: Record<string, string> = {
-      '1': 'After hours home visit',
-      '2': 'At-Home Peaceful Euthanasia',
-    };
-    const services = formatServices(appointment.services);
-    // Pet info fallbacks
-    let petName = "Unknown Pet";
-    let petType = "";
-    if (appointment.pets && typeof appointment.pets === 'object') {
-      if ('name' in appointment.pets && appointment.pets.name) {
-        petName = appointment.pets.name;
-      } else if (Object.keys(appointment.pets).length === 0) {
-        petName = "Unknown Pet";
-      } else {
-        petName = "Pet";
-      }
-      if ('type' in appointment.pets && appointment.pets.type) {
-        petType = appointment.pets.type;
-      }
-    }
+  const renderAppointmentCard = (appointment: Appointment) => {
+    const statusInfo = getStatusLabel(appointment.status);
+    const petName = appointment.pets?.name || "Unknown Pet";
+    const petType = appointment.pets?.type || "Pet";
     const petImage = appointment.pets?.image || null;
+
     const appointmentDate = appointment.date ? new Date(appointment.date).toLocaleDateString() : "Date not specified";
     const appointmentTime = appointment.time_slot || "Time not specified";
     const paymentAmount = appointment.total_price ? `$${appointment.total_price}` : "N/A";
+
     return (
       <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-6">
         {/* Appointment Header */}
@@ -229,7 +210,20 @@ export default function BookingsPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>{status.label}</span>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>{statusInfo.label}</span>
+              <button 
+                onClick={() => {
+                  if (appointment && appointment.id) { // Ensure appointment and id exist
+                    navigator.clipboard.writeText(appointment.id);
+                    setCopiedId(appointment.id);
+                    setTimeout(() => setCopiedId(null), 2000);
+                  }
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1"
+                title="Copy Appointment ID"
+              >
+                {copiedId === appointment.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              </button>
               <span className="text-gray-500 text-sm">#{appointment.id.substring(0, 8)}</span>
             </div>
           </div>
@@ -261,6 +255,7 @@ export default function BookingsPage() {
                 <p className="text-gray-600">{appointment.address || "Address not specified"}</p>
                 {appointment.notes && <p className="text-gray-600 text-sm">{appointment.notes}</p>}
               </div>
+
             </div>
             <div className="flex items-start">
               <div className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0">$</div>
@@ -301,37 +296,12 @@ export default function BookingsPage() {
         </div>
 
         {/* Vet Proposal */}
-        {appointment.vetProposal?.hasProposal && (
-          <div className="p-6 bg-yellow-50 border-t border-yellow-200">
-            <div className="flex items-start">
-              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium text-yellow-800">Vet has proposed a new time</p>
-                <p className="text-yellow-700 mb-3">{appointment.vetProposal.message}</p>
-                <div className="bg-white p-3 rounded-md border border-yellow-200 mb-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 text-yellow-600 mr-2" />
-                      <span className="text-sm">{appointment.vetProposal.proposedDate}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Clock className="h-4 w-4 text-yellow-600 mr-2" />
-                      <span className="text-sm">{appointment.vetProposal.proposedTime}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    onClick={() => acceptProposal(appointment.id)}
-                    className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-                  >
-                    Accept new time
-                  </Button>
-                  <Button variant="outline" onClick={() => declineProposal(appointment.id)}>
-                    Decline
-                  </Button>
-                </div>
-              </div>
+        {appointment.status === 'pending_vet' && appointment.proposed_time && (
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="font-medium text-yellow-800">Vet proposed new time: {new Date(appointment.proposed_time).toLocaleString()}</p>
+            <div className="mt-2 space-x-2">
+                <Button size="sm" onClick={() => acceptProposal(appointment.id)} className="bg-green-500 hover:bg-green-600">Accept</Button>
+                <Button size="sm" variant="outline" onClick={() => declineProposal(appointment.id)}>Decline</Button>
             </div>
           </div>
         )}
