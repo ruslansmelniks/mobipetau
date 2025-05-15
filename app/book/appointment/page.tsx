@@ -1,24 +1,22 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowLeft, MapPin } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { format } from "date-fns"
-import { cn } from "@/lib/utils"
-import { BookingSteps } from "@/components/booking-steps"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
-import { useJsApiLoader, GoogleMap, Marker, Autocomplete } from '@react-google-maps/api'
-import { loadStripe } from '@stripe/stripe-js'
-import { useSupabaseClient } from "@supabase/auth-helpers-react"
-import { useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser, useSessionContext } from "@supabase/auth-helpers-react"
+import GoogleMapsAutocomplete from '@/components/ui/GoogleMapsAutocomplete'
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarIcon } from "lucide-react"
+import { Calendar } from "@/components/ui/calendar"
+import { format } from "date-fns"
 
 // Time slot options based on time of day
 const timeSlots = {
@@ -27,203 +25,368 @@ const timeSlots = {
   evening: ["05:00 - 06:30 PM", "06:30 - 08:00 PM"],
 }
 
-const containerStyle = {
-  width: '100%',
-  height: '300px'
+// Perth suburb list - expanded with postal codes
+const perthSuburbs = [
+  { name: "Perth", postalCodes: ["6000", "6001"] },
+  { name: "West Perth", postalCodes: ["6005"] },
+  { name: "East Perth", postalCodes: ["6004"] },
+  { name: "Northbridge", postalCodes: ["6003"] },
+  { name: "Subiaco", postalCodes: ["6008"] },
+  { name: "Leederville", postalCodes: ["6007"] },
+  { name: "Mount Lawley", postalCodes: ["6050"] },
+  { name: "North Perth", postalCodes: ["6006"] },
+  { name: "South Perth", postalCodes: ["6151"] },
+  { name: "Victoria Park", postalCodes: ["6100"] },
+  { name: "Fremantle", postalCodes: ["6160"] },
+  { name: "Cottesloe", postalCodes: ["6011"] },
+  { name: "Scarborough", postalCodes: ["6019"] },
+  { name: "Karrinyup", postalCodes: ["6018"] },
+  { name: "Nedlands", postalCodes: ["6009"] },
+  { name: "Claremont", postalCodes: ["6010"] },
+  { name: "Dalkeith", postalCodes: ["6009"] },
+  { name: "Wembley", postalCodes: ["6014"] },
+  { name: "City Beach", postalCodes: ["6015"] },
+  { name: "Floreat", postalCodes: ["6014"] }
+];
+
+// Common Perth street names for search suggestions
+const commonStreets = [
+  "Hay Street", "St Georges Terrace", "Adelaide Terrace", "Wellington Street", 
+  "Murray Street", "Barrack Street", "William Street", "Beaufort Street",
+  "Albany Highway", "Canning Highway", "Stirling Highway", "Mounts Bay Road",
+  "Riverside Drive", "Kings Park Road", "Thomas Street"
+];
+
+// Updated function to check if address is in Perth
+const checkIfInPerth = (addressStr: string): boolean => {
+  if (!addressStr) return false;
+  addressStr = addressStr.toLowerCase();
+  const containsPerth = addressStr.includes("perth") || 
+                       addressStr.includes("wa") || 
+                       addressStr.includes("western australia") ||
+                       /\b60\d\d\b/.test(addressStr); // Perth area postal codes often start with 60xx
+  const containsPerthSuburb = perthSuburbs.some(suburb => 
+    addressStr.includes(suburb.name.toLowerCase())
+  );
+  const postalCodeMatch = addressStr.match(/\b(\d{4})\b/);
+  const isPerthPostalCode = !!(postalCodeMatch && 
+    perthSuburbs.some(suburb => suburb.postalCodes.includes(postalCodeMatch[1])));
+  const isInPerthArea = containsPerth || containsPerthSuburb || isPerthPostalCode;
+  console.log("Address Perth check:", {addressStr, isInPerthArea});
+  return isInPerthArea;
 };
 
-const center = {
-  lat: -31.9505, // Perth latitude
-  lng: 115.8605  // Perth longitude
+// Function to get address suggestions based on input
+const getAddressSuggestions = (input: string): string[] => {
+  if (!input || input.length < 3) return [];
+  const inputLower = input.toLowerCase();
+  let suggestions: string[] = [];
+  // First try to match street names
+  commonStreets.forEach(street => {
+    if (street.toLowerCase().includes(inputLower)) {
+      // Add variations with different suburbs
+      perthSuburbs.slice(0, 5).forEach(suburb => {
+        suggestions.push(`${street}, ${suburb.name}, WA ${suburb.postalCodes[0]}, Australia`);
+      });
+    }
+  });
+  // If no street matches, try to match suburbs
+  if (suggestions.length === 0) {
+    perthSuburbs.forEach(suburb => {
+      if (suburb.name.toLowerCase().includes(inputLower)) {
+        suggestions.push(`${suburb.name}, Western Australia, ${suburb.postalCodes[0]}, Australia`);
+      }
+    });
+  }
+  // If we have partial matches for both streets and suburbs, create combinations
+  if (suggestions.length === 0) {
+    // Find street name parts
+    const matchingStreets = commonStreets.filter(street => 
+      inputLower.split(' ').some(part => 
+        street.toLowerCase().includes(part) && part.length > 2
+      )
+    );
+    // Find suburb name parts
+    const matchingSuburbs = perthSuburbs.filter(suburb => 
+      inputLower.split(' ').some(part => 
+        suburb.name.toLowerCase().includes(part) && part.length > 2
+      )
+    );
+    // Create combinations
+    matchingStreets.slice(0, 3).forEach(street => {
+      matchingSuburbs.slice(0, 3).forEach(suburb => {
+        suggestions.push(`${street}, ${suburb.name}, WA ${suburb.postalCodes[0]}, Australia`);
+      });
+    });
+  }
+  // Add some specific suggestions if input looks like an address number
+  if (/^\d+\s/.test(input)) {
+    const number = input.match(/^\d+/)?.[0];
+    commonStreets.slice(0, 3).forEach(street => {
+      suggestions.push(`${number} ${street}, Perth, WA 6000, Australia`);
+    });
+  }
+  // Limit suggestions and ensure uniqueness
+  suggestions = [...new Set(suggestions)].slice(0, 5);
+  console.log("Address suggestions:", suggestions);
+  return suggestions;
 };
-
-const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-if (!googleMapsApiKey) throw new Error("Google Maps API key is missing");
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function AppointmentDetails() {
   const router = useRouter()
+  const supabase = useSupabaseClient()
+  const { isLoading: sessionLoading } = useSessionContext()
+  const user = useUser()
+
+  // Form state
   const [address, setAddress] = useState("")
   const [additionalInfo, setAdditionalInfo] = useState("")
   const [date, setDate] = useState<Date | undefined>(undefined)
   const [timeOfDay, setTimeOfDay] = useState<"morning" | "afternoon" | "evening" | null>(null)
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null)
-  const [mapCoordinates, setMapCoordinates] = useState({ lat: -31.9523, lng: 115.8613 })
-  const [marker, setMarker] = useState(center)
-  const [draftId, setDraftId] = useState<string | null>(null)
-  const autocompleteRef = useRef<any>(null)
   const [isInPerth, setIsInPerth] = useState(true)
-  const supabase = useSupabaseClient()
-  const user = useUser()
+  const [draftId, setDraftId] = useState<string | null>(null)
+  const [addressLatLng, setAddressLatLng] = useState<{ lat: number, lng: number } | null>(null);
+  
+  // UI state
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isCancelling, setIsCancelling] = useState(false)
-  const [missingDraft, setMissingDraft] = useState(false)
+  const [showPerthWarning, setShowPerthWarning] = useState(false)
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: googleMapsApiKey!,
-    libraries: ['places'],
-  });
+  // Function to check if an address is in Perth
+  const checkIfInPerth = (addressStr: string) => {
+    addressStr = addressStr.toLowerCase();
+    
+    // Check if the address contains "perth" or any Perth suburb
+    const containsPerth = addressStr.includes("perth") || 
+                          addressStr.includes("wa") || 
+                          addressStr.includes("western australia");
+                          
+    const containsPerthSuburb = perthSuburbs.some(suburb => 
+      addressStr.includes(suburb.name.toLowerCase())
+    );
+    
+    const isInPerthArea = containsPerth || containsPerthSuburb;
+    
+    setIsInPerth(isInPerthArea);
+    setShowPerthWarning(!isInPerthArea);
+    
+    return isInPerthArea;
+  };
 
-  useEffect(() => {
-    if (!user) return;
-    setError(null);
-    setMissingDraft(false);
-    // Fetch existing draft appointment
-    const fetchDraftAppointment = async () => {
-      const { data: draft, error: fetchError } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('pet_owner_id', user.id)
-        .eq('status', 'pending')
-        .single();
-      if (fetchError) {
-        setError('Failed to fetch draft appointment. Please try again.');
-        return;
+  // Geocode address using OpenStreetMap Nominatim
+  const geocodeAddress = async (address: string) => {
+    if (!address.trim()) return;
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const { lat, lon } = data[0];
+        return { lat: parseFloat(lat), lng: parseFloat(lon) };
       }
-      if (!draft) {
-        setMissingDraft(true);
-        setTimeout(() => {
-          router.replace('/book');
-        }, 2000);
-        return;
-      }
-      setDraftId(draft.id);
-      if (draft.address) {
-        setAddress(draft.address);
-      }
-      if (draft.additional_info) {
-        setAdditionalInfo(draft.additional_info);
-      }
-      if (draft.date) {
-        setDate(new Date(draft.date));
-      }
-      if (draft.time_slot) {
-        setSelectedTimeSlot(draft.time_slot);
-        // Set time of day based on time slot
-        const hour = parseInt(draft.time_slot.split(':')[0]);
-        if (hour < 10) setTimeOfDay('morning');
-        else if (hour < 17) setTimeOfDay('afternoon');
-        else setTimeOfDay('evening');
-      }
-      if (draft.latitude && draft.longitude) {
-        setMapCoordinates({ lat: draft.latitude, lng: draft.longitude });
-        setMarker({ lat: draft.latitude, lng: draft.longitude });
-      }
-    };
-    fetchDraftAppointment();
-  }, [user]);
-
-  const checkIfInPerth = (address: string, lat: number, lng: number) => {
-    // Perth metro area bounding box
-    const north = -31.6;
-    const south = -32.3;
-    const east = 116.3;
-    const west = 115.6;
-
-    if (lat < north && lat > south && lng > west && lng < east) {
-      setIsInPerth(true);
-    } else {
-      setIsInPerth(false);
+      return null;
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return null;
     }
   };
 
-  // Get user's current location on mount and reverse geocode to address
-  useEffect(() => {
-    if (navigator.geolocation && isLoaded) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          setMarker({ lat: latitude, lng: longitude });
-          setMapCoordinates({ lat: latitude, lng: longitude });
+  const handleAddressChange = (val: string) => {
+    setAddress(val);
+    // Check if address is in Perth area
+    const isPerthAddress = checkIfInPerth(val);
+    setIsInPerth(isPerthAddress);
+    setShowPerthWarning(!isPerthAddress && val.length > 5);
+  };
 
-          // Reverse geocode to get address
-          if (window.google && window.google.maps) {
-            const geocoder = new window.google.maps.Geocoder();
-            geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
-              if (status === 'OK' && results && results[0]) {
-                setAddress(results[0].formatted_address);
-                checkIfInPerth(results[0].formatted_address, latitude, longitude);
-              }
-            });
-          }
-        },
-        (error) => {
-          // Optionally handle error (e.g., user denied)
-          console.log("Geolocation error:", error);
-        }
-      );
+  const handlePlaceSelected = (place: google.maps.places.PlaceResult, latLng: { lat: number, lng: number }) => {
+    setAddressLatLng(latLng);
+    if (place.formatted_address) {
+      setAddress(place.formatted_address);
+      const isPerthAddress = checkIfInPerth(place.formatted_address);
+      setIsInPerth(isPerthAddress);
+      setShowPerthWarning(!isPerthAddress && place.formatted_address.length > 5);
     }
-  }, [isLoaded]);
+  };
+
+  // Load or create draft appointment
+  useEffect(() => {
+    const fetchOrCreateDraft = async () => {
+      if (sessionLoading) {
+        console.log("Session is still loading, waiting...");
+        return;
+      }
+      if (!user) {
+        console.log("No user found after session loaded");
+        setLoading(false);
+        setError("User not authenticated. Please log in again.");
+        return;
+      }
+      console.log("User authenticated:", user.id);
+      try {
+        const { error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error("Session error:", sessionError);
+          setLoading(false);
+          setError("Session error. Please log in again.");
+          return;
+        }
+        console.log("Fetching draft appointment for user:", user.id);
+        
+        // Try to fetch existing draft
+        const { data: draft, error: fetchError } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('pet_owner_id', user.id)
+          .or('status.eq.draft,status.eq.pending')
+          .single();
+        
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          console.error("Error fetching draft:", fetchError);
+          setError('Failed to fetch appointment details.');
+          setLoading(false);
+          return;
+        }
+        
+        if (!draft) {
+          console.log("No draft found, creating new draft");
+          
+          // Create a new draft
+          const { data: newDraft, error: createError } = await supabase
+            .from('appointments')
+            .insert({
+              pet_owner_id: user.id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+            
+          if (createError) {
+            console.error("Error creating draft:", createError);
+            setError('Failed to create appointment.');
+            setLoading(false);
+            return;
+          }
+          
+          setDraftId(newDraft.id);
+          console.log("Created new draft:", newDraft.id);
+        } else {
+          console.log("Found existing draft:", draft.id);
+          setDraftId(draft.id);
+          
+          // Populate form with existing data
+          if (draft.address) {
+            setAddress(draft.address);
+            checkIfInPerth(draft.address);
+          }
+          if (draft.additional_info) setAdditionalInfo(draft.additional_info);
+          if (draft.date) setDate(new Date(draft.date));
+          if (draft.time_of_day) setTimeOfDay(draft.time_of_day);
+          if (draft.time_slot) setSelectedTimeSlot(draft.time_slot);
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        setError('An unexpected error occurred.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchOrCreateDraft();
+  }, [user, supabase, sessionLoading]);
+
+  // Save the appointment data and proceed
+  const handleNext = async () => {
+    if (!draftId) {
+      setError("No draft appointment found.");
+      return;
+    }
+
+    if (!address || !date || !timeOfDay || !selectedTimeSlot) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (!isInPerth) {
+      setShowPerthWarning(true);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      console.log("Updating appointment:", draftId);
+      
+      // Create update data
+      const updateData = {
+        address,
+        additional_info: additionalInfo,
+        date: date.toISOString(),
+        time_slot: selectedTimeSlot,
+        time_of_day: timeOfDay,
+        is_in_perth: isInPerth,
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log("Update data:", updateData);
+      
+      // Update the record in the database first
+      const { data, error: updateError } = await supabase
+        .from('appointments')
+        .update(updateData)
+        .eq('id', draftId);
+
+      if (updateError) {
+        console.error("Error updating appointment:", updateError);
+        setError('Failed to save appointment details.');
+        setLoading(false);
+        return;
+      }
+      
+      console.log("Appointment details updated successfully, navigating to payment confirmation page");
+      
+      // Make sure we don't have any pending state updates
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Use window.location for a reliable navigation
+      window.location.href = "/book/payment";
+    } catch (err) {
+      console.error("Error in handleNext:", err);
+      setError('An unexpected error occurred while saving.');
+      setLoading(false);
+    }
+  };
 
   // Reset time slot when time of day changes
   useEffect(() => {
-    setSelectedTimeSlot(null)
-  }, [timeOfDay])
+    setSelectedTimeSlot(null);
+  }, [timeOfDay]);
 
-  const handleNext = async () => {
-    if (!draftId || !isFormValid) return;
-    setError(null);
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        address,
-        additional_info: additionalInfo,
-        date: date?.toISOString(),
-        time_slot: selectedTimeSlot,
-        time_of_day: timeOfDay,
-        latitude: marker.lat,
-        longitude: marker.lng,
-        is_in_perth: isInPerth
-      })
-      .eq('id', draftId);
-    if (error) {
-      setError('Error updating draft appointment. Please try again.');
-      return;
-    }
-    router.push("/book/payment");
-  };
+  // Loading state
+  if (loading && !error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="text-center p-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading appointment details...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const isFormValid = address && date && timeOfDay && selectedTimeSlot
-
-  const handlePlaceChanged = () => {
-    if (!autocompleteRef.current) return;
-    const place = autocompleteRef.current.getPlace();
-    if (place.geometry?.location) {
-      const location = place.geometry.location;
-      const lat = location.lat();
-      const lng = location.lng();
-      setMarker({ lat, lng });
-      setAddress(place.formatted_address || '');
-      setMapCoordinates({ lat, lng });
-      checkIfInPerth(place.formatted_address || '', lat, lng);
-    }
-  };
-
-  const handleCancelBooking = async () => {
-    if (!draftId) return;
-    if (!window.confirm('Are you sure you want to cancel this booking? This cannot be undone.')) return;
-    setIsCancelling(true);
-    await supabase.from('appointments').delete().eq('id', draftId);
-    setIsCancelling(false);
-    router.replace('/portal/bookings');
-  };
-
-  console.log({
-    address,
-    date,
-    timeOfDay,
-    selectedTimeSlot,
-    isFormValid,
-    isInPerth
-  });
-
+  // Main component render
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div id="appointment-container" className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <Link href="/" className="flex justify-center md:justify-start">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+            <Image 
+              src="/logo.png" 
+              alt="MobiPet Logo" 
+              width={96} 
+              height={32} 
+              className="h-[32px] w-auto"
+            />
           </Link>
         </div>
       </header>
@@ -235,90 +398,39 @@ export default function AppointmentDetails() {
           <h1 className="text-3xl font-bold text-center mb-2">Appointment details</h1>
           <p className="text-center text-gray-600 mb-8">Please provide your address and preferred appointment time.</p>
 
+          {error && error.includes("authenticated") && (
+            <div className="bg-red-100 border border-red-300 text-red-700 p-4 rounded-md mb-6">
+              {error}
+              <div className="mt-4">
+                <Button 
+                  onClick={() => window.location.href = "/login?redirect=/book/appointment"}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Log in again
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-6">
             {/* Address Section */}
             <div className="bg-white p-6 rounded-lg border">
               <Label htmlFor="address" className="text-base font-medium mb-2 block">
                 Enter your address <span className="text-gray-500 text-sm">(limited to Perth area)</span>
               </Label>
-              {isLoaded ? (
-                <>
-                  <Autocomplete
-                    onLoad={ref => {
-                      if (ref) {
-                        autocompleteRef.current = ref;
-                      }
-                    }}
-                    onPlaceChanged={handlePlaceChanged}
-                    options={{
-                      componentRestrictions: { country: 'au' },
-                      bounds: {
-                        north: -31.7, // North of Perth
-                        south: -32.3, // South of Perth
-                        east: 116.1,  // East of Perth
-                        west: 115.6   // West of Perth
-                      },
-                      strictBounds: true
-                    }}
-                  >
-                    <div className="relative mb-4">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        <MapPin className="w-5 h-5" />
-                      </span>
-                      <input
-                        type="text"
-                        placeholder="Enter your address"
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition text-base"
-                        value={address}
-                        onChange={async e => {
-                          const newAddress = e.target.value;
-                          setAddress(newAddress);
-                          if (window.google && window.google.maps) {
-                            const geocoder = new window.google.maps.Geocoder();
-                            geocoder.geocode({ address: newAddress }, (results, status) => {
-                              if (status === 'OK' && results && results[0]) {
-                                const loc = results[0].geometry.location;
-                                const lat = loc.lat();
-                                const lng = loc.lng();
-                                setMarker({ lat, lng });
-                                setMapCoordinates({ lat, lng });
-                                checkIfInPerth(newAddress, lat, lng);
-                              } else {
-                                setIsInPerth(false);
-                              }
-                            });
-                          } else {
-                            setIsInPerth(false);
-                          }
-                        }}
-                      />
-                    </div>
-                  </Autocomplete>
-                  <GoogleMap
-                    mapContainerStyle={containerStyle}
-                    center={marker}
-                    zoom={14}
-                    onClick={e => {
-                      if (!e.latLng) return;
-                      setMarker({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-                    }}
-                  >
-                    <Marker
-                      position={marker}
-                      draggable
-                      onDragEnd={e => {
-                        if (!e.latLng) return;
-                        setMarker({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-                      }}
-                    />
-                  </GoogleMap>
-                  <div style={{ height: 24 }} />
-                </>
-              ) : (
-                <div>Loading map...</div>
+              <GoogleMapsAutocomplete
+                value={address}
+                onChange={handleAddressChange}
+                onPlaceSelected={handlePlaceSelected}
+                disabled={loading}
+              />
+              {showPerthWarning && (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-md mb-4 mt-4">
+                  <p className="font-medium">Address not recognized as Perth area</p>
+                  <p className="text-sm mt-1">MobiPet currently only serves the Perth metropolitan area. Please enter a Perth address.</p>
+                </div>
               )}
-
-              <Label htmlFor="additional-info" className="text-base font-medium mb-2 block">
+              <Label htmlFor="additional-info" className="text-base font-medium mb-2 block mt-4">
                 Additional information about your location
               </Label>
               <Textarea
@@ -337,25 +449,23 @@ export default function AppointmentDetails() {
                   <Label className="text-base font-medium mb-2 block">Appointment date</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn("w-full justify-start text-left font-normal", !date && "text-gray-400")}
+                      <button
+                        type="button"
+                        className={
+                          `w-full flex items-center justify-between border rounded-md px-3 py-2 h-10 bg-white text-left text-base focus:outline-none focus:ring-2 focus:ring-teal-500 ${!date ? 'text-muted-foreground' : ''}`
+                        }
                       >
-                        {date ? format(date, "PPP") : "Select a date"}
-                      </Button>
+                        {date ? format(date, "dd/MM/yyyy") : <span>Select a date</span>}
+                        <CalendarIcon className="ml-2 h-5 w-5 text-gray-400" />
+                      </button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar
                         mode="single"
                         selected={date}
                         onSelect={setDate}
+                        disabled={(day) => day < new Date()}
                         initialFocus
-                        disabled={(date) => {
-                          // Disable dates in the past
-                          const today = new Date()
-                          today.setHours(0, 0, 0, 0)
-                          return date < today
-                        }}
                       />
                     </PopoverContent>
                   </Popover>
@@ -368,23 +478,35 @@ export default function AppointmentDetails() {
                     onValueChange={(value) => setTimeOfDay(value as "morning" | "afternoon" | "evening")}
                     className="flex flex-wrap gap-2"
                   >
-                    <div className="flex items-center space-x-2 bg-white border rounded-md px-3 py-2 cursor-pointer hover:border-teal-200">
-                      <RadioGroupItem value="morning" id="morning" />
-                      <Label htmlFor="morning" className="cursor-pointer">
+                    <div className="flex-1 min-w-[120px]">
+                      <RadioGroupItem value="morning" id="morning" className="peer hidden" />
+                      <label
+                        htmlFor="morning"
+                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
+                          ${timeOfDay === 'morning' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
+                      >
                         Morning
-                      </Label>
+                      </label>
                     </div>
-                    <div className="flex items-center space-x-2 bg-white border rounded-md px-3 py-2 cursor-pointer hover:border-teal-200">
-                      <RadioGroupItem value="afternoon" id="afternoon" />
-                      <Label htmlFor="afternoon" className="cursor-pointer">
+                    <div className="flex-1 min-w-[120px]">
+                      <RadioGroupItem value="afternoon" id="afternoon" className="peer hidden" />
+                      <label
+                        htmlFor="afternoon"
+                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
+                          ${timeOfDay === 'afternoon' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
+                      >
                         Afternoon
-                      </Label>
+                      </label>
                     </div>
-                    <div className="flex items-center space-x-2 bg-white border rounded-md px-3 py-2 cursor-pointer hover:border-teal-200">
-                      <RadioGroupItem value="evening" id="evening" />
-                      <Label htmlFor="evening" className="cursor-pointer">
+                    <div className="flex-1 min-w-[120px]">
+                      <RadioGroupItem value="evening" id="evening" className="peer hidden" />
+                      <label
+                        htmlFor="evening"
+                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
+                          ${timeOfDay === 'evening' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
+                      >
                         Evening
-                      </Label>
+                      </label>
                     </div>
                   </RadioGroup>
                 </div>
@@ -400,10 +522,9 @@ export default function AppointmentDetails() {
                         key={slot}
                         type="button"
                         variant="outline"
-                        className={cn(
-                          "justify-center",
-                          selectedTimeSlot === slot ? "border-teal-500 bg-teal-50 text-teal-700" : "border-gray-200",
-                        )}
+                        className={`justify-center ${
+                          selectedTimeSlot === slot ? "border-teal-500 bg-teal-50 text-teal-700" : "border-gray-200"
+                        }`}
                         onClick={() => setSelectedTimeSlot(slot)}
                       >
                         {slot}
@@ -424,24 +545,14 @@ export default function AppointmentDetails() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!isFormValid || !isInPerth}
+              disabled={!address || !date || !timeOfDay || !selectedTimeSlot || !isInPerth || loading}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              Review details
+              {loading ? "Saving..." : "Review details"}
             </Button>
           </div>
-
-          {error && (
-            <div className="bg-red-100 text-red-700 p-4 rounded mb-4 text-center">{error}</div>
-          )}
-
-          {missingDraft && (
-            <div className="bg-yellow-100 text-yellow-800 p-4 rounded mb-4 text-center">
-              Your booking draft was not found. Redirecting to start...
-            </div>
-          )}
         </div>
       </main>
     </div>
-  )
+  );
 }

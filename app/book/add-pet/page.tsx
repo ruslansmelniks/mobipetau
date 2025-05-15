@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft, Upload } from "lucide-react"
@@ -27,9 +27,24 @@ export default function AddPet() {
   const [ageUnit, setAgeUnit] = useState("");
   const [weight, setWeight] = useState("");
   const [gender, setGender] = useState("");
-  const [medicalHistory, setMedicalHistory] = useState("");
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
+
+  // --- DEBUG PETS SCHEMA ---
+  useEffect(() => {
+    if (!user || process.env.NODE_ENV !== 'development') return;
+    // Optionally, keep a minimal select for troubleshooting
+    supabase
+      .from('pets')
+      .select('*')
+      .limit(1)
+      .then(({data, error}) => {
+        if (error) {
+          console.error("Pets table select error:", error);
+        }
+      });
+  }, [user, supabase]);
+  // --- END DEBUG PETS SCHEMA ---
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,13 +81,12 @@ export default function AddPet() {
     const { error } = await supabase.from('pets').insert({
       owner_id: user.id,
       name: petName,
-      species,
-      breed,
+      type: species,
+      breed: breed,
       age: age ? Number(age) : null,
       age_unit: ageUnit,
       weight: weight ? Number(weight) : null,
-      gender,
-      medical_history: medicalHistory,
+      gender: gender,
       image: imageUrl,
     });
     setSaving(false);
@@ -189,17 +203,6 @@ export default function AddPet() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pet-medical-history">Medical History</Label>
-              <Textarea
-                id="pet-medical-history"
-                placeholder="Enter any relevant medical history, allergies, or ongoing conditions"
-                className="min-h-[100px]"
-                value={medicalHistory}
-                onChange={e => setMedicalHistory(e.target.value)}
-              />
             </div>
 
             <div className="flex justify-between pt-4">

@@ -103,7 +103,7 @@ export default function VetAppointmentsPage() {
 
   const pendingAppointments = filteredAppointments.filter((appointment) => appointment.status === "pending_approval")
   const upcomingAppointments = filteredAppointments.filter(
-    (appointment) => appointment.status === "confirmed" && new Date(appointment.confirmedDate) >= new Date(),
+    (appointment) => appointment.status === "confirmed" && appointment.confirmedDate && new Date(appointment.confirmedDate) >= new Date(),
   )
   const pastAppointments = filteredAppointments.filter(
     (appointment) => appointment.status === "completed" || appointment.status === "cancelled",
@@ -140,7 +140,7 @@ export default function VetAppointmentsPage() {
                   alt={appointment.pet.name}
                   width={48}
                   height={48}
-                  className="w-full h-full object-cover"
+                  className="w-full h-auto object-cover"
                 />
               </div>
               <div>

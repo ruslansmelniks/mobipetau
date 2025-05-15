@@ -4,17 +4,21 @@ import { redirect } from 'next/navigation';
 import ConfirmationClient from '../ConfirmationClient';
 
 export default async function BookingConfirmation({ searchParams }: { searchParams: any }) {
-  // Use Supabase server helper for SSR auth
-  const supabase = createServerComponentClient({ cookies });
+  // Create a new Supabase client for the server component
+  const cookieStore = cookies();
+  const supabase = createServerComponentClient({ cookies: () => cookieStore });
+  // Handle search params properly
   const params = typeof searchParams.then === 'function' ? await searchParams : searchParams;
   const sessionId = params.session_id || undefined;
 
+  // Get the current user
   const { data: { user }, error } = await supabase.auth.getUser();
   console.log('Supabase getUser result:', user, error);
 
+  // If no user, redirect to login
   if (!user) {
     redirect('/login');
   }
 
-  return <ConfirmationClient user={user} sessionId={sessionId} />;
+  return <ConfirmationClient user={user} />;
 }

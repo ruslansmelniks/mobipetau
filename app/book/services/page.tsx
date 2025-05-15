@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -10,109 +10,248 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
-import { useSupabaseClient } from "@supabase/auth-helpers-react"
-import { useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 
-// Sample services data
+// Define types consistent with app/book/page.tsx
+type DraftAppointment = {
+  id: string;
+  pet_owner_id: string;
+  pet_id?: string | null;
+  service_ids?: string[] | null;
+  services?: string[] | null;
+  status: string;
+  appointment_date?: string | null;
+  appointment_time?: string | null;
+  address?: string | null;
+  additional_info?: string | null;
+  notes?: string | null; // For issue description
+  total_price?: number | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+type Service = {
+  id: string;
+  name: string; // Changed from title for consistency if DB schema uses 'name'
+  description: string;
+  price: number;
+  // Add other relevant fields if any, e.g., duration, category
+};
+
+// Hard-coded services array
 const services = [
   {
     id: "1",
-    title: "After hours home visit",
-    description: "A qualified vet will be prioritised to come to urgently assist your pet in the event of an emergency",
+    name: "After hours home visit",
+    description: "A qualified vet will be prioritised to come to urgently assist your pet...",
     price: 299,
   },
   {
     id: "2",
-    title: "At-Home Peaceful Euthanasia",
-    description:
-      "A compassionate, gentle farewell for your pet in the comfort and familiarity of home, ensuring their final moments are peaceful and surrounded by loved ones",
+    name: "At-Home Peaceful Euthanasia",
+    description: "A compassionate, gentle farewell for your pet in the comfort...",
     price: 599,
   },
-]
+];
 
 export default function SelectServices() {
-  const [selectedServices, setSelectedServices] = useState<string[]>([])
-  const [issueDescription, setIssueDescription] = useState("")
-  const [draftId, setDraftId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isCancelling, setIsCancelling] = useState(false)
-  const [missingDraft, setMissingDraft] = useState(false)
-  const router = useRouter()
-  const supabase = useSupabaseClient()
-  const user = useUser()
+  const [draftAppointment, setDraftAppointment] = useState<DraftAppointment | null>(null);
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [issueDescription, setIssueDescription] = useState("");
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false); // For Next button loading state
+  
+  const router = useRouter();
+  const supabase = useSupabaseClient();
+  const user = useUser();
+
+  const calculateTotal = useCallback(() => {
+    if (!allServices.length || !selectedServiceIds.length) return 0;
+    return allServices
+      .filter((service) => selectedServiceIds.includes(service.id))
+      .reduce((total, service) => total + service.price, 0);
+  }, [allServices, selectedServiceIds]);
+
+  const debug = true;
 
   useEffect(() => {
-    if (!user) return;
-    setError(null);
-    setMissingDraft(false);
-    // Fetch existing draft appointment
-    const fetchDraftAppointment = async () => {
-      const { data: draft, error: fetchError } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('pet_owner_id', user.id)
-        .eq('status', 'pending')
-        .single();
-      if (fetchError) {
-        setError('Failed to fetch draft appointment. Please try again.');
-        return;
+    const fetchInitialData = async () => {
+      if (!user) {
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) {
+          setError("No active session. Please log in.");
+          setIsLoading(false);
+          router.push("/login");
+          return;
+        }
       }
-      if (!draft) {
-        setMissingDraft(true);
-        setTimeout(() => {
-          router.replace('/book');
-        }, 2000);
-        return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        if (!user) {
+          setError("User session not found. Please log in again.");
+          setIsLoading(false);
+          router.push("/login");
+          return;
+        }
+        // Fetch Draft Appointment as before, but check both 'draft' and 'pending' statuses
+        const { data: draft, error: draftError } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('pet_owner_id', user.id)
+          .or('status.eq.draft,status.eq.pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (debug) console.log("Draft fetch result (services):", draft, draftError);
+        if (draftError) {
+          setError(`Failed to load booking details: ${draftError.message}. Please try again.`);
+          setIsLoading(false);
+          return;
+        }
+        if (!draft || !draft.pet_id) {
+          setError("No booking in progress or pet not selected. Please start again.");
+          setIsLoading(false);
+          router.push('/book');
+          return;
+        }
+        setDraftAppointment(draft as DraftAppointment);
+        setSelectedServiceIds(draft.services || []); // Use 'services' field from appointment
+        setIssueDescription(draft.notes || "");
+        // Use hard-coded services
+        setAllServices(services);
+      } catch (e: any) {
+        setError(`An unexpected error occurred: ${e.message}`);
       }
-      setDraftId(draft.id);
-      if (draft.services) {
-        setSelectedServices(draft.services);
-      }
-      if (draft.notes) {
-        setIssueDescription(draft.notes);
-      }
+      setIsLoading(false);
     };
-    fetchDraftAppointment();
-  }, [user]);
+    if (user) {
+      fetchInitialData();
+    } else {
+      const checkSessionAndFetch = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          fetchInitialData();
+        } else if (!isLoading) {
+            setError("Authenticating... please wait or try logging in.");
+        }
+      };
+      checkSessionAndFetch();
+    }
+  }, [user, router, supabase]);
 
-  const toggleServiceSelection = (serviceId: string) => {
-    setSelectedServices((prev) =>
-      prev.includes(serviceId) ? prev.filter((id) => id !== serviceId) : [...prev, serviceId],
-    )
-  }
+  const updateDraftInSupabase = async (updatedFields: Partial<DraftAppointment>) => {
+    if (!draftAppointment) {
+      setError("Cannot save: No booking in progress.");
+      return null;
+    }
+    setIsSaving(true);
+    setError(null);
+    const payload = {
+      ...updatedFields,
+      updated_at: new Date().toISOString(),
+    };
+    const { data: newDraft, error: updateError } = await supabase
+      .from('appointments')
+      .update(payload)
+      .eq('id', draftAppointment.id)
+      .select()
+      .single();
+    setIsSaving(false);
+    if (updateError) {
+      setError(`Failed to save changes: ${updateError.message}. Please try again.`);
+      return null;
+    }
+    setDraftAppointment(newDraft as DraftAppointment);
+    return newDraft as DraftAppointment;
+  };
 
-  const calculateTotal = () => {
-    return services
-      .filter((service) => selectedServices.includes(service.id))
-      .reduce((total, service) => total + service.price, 0)
-  }
+  const handleServiceToggle = async (serviceId: string) => {
+    const newSelectedServiceIds = selectedServiceIds.includes(serviceId)
+      ? selectedServiceIds.filter((id) => id !== serviceId)
+      : [...selectedServiceIds, serviceId];
+    setSelectedServiceIds(newSelectedServiceIds);
+    await updateDraftInSupabase({
+      services: newSelectedServiceIds, // Save to 'services' field
+      total_price: calculateTotal(),
+    });
+  };
 
   const handleNext = async () => {
-    if (selectedServices.length === 0 || !draftId) return;
+    if (selectedServiceIds.length === 0 || !draftAppointment) return;
     setError(null);
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        services: selectedServices,
+    try {
+      setIsLoading(true);
+      console.log("Updating appointment:", {
+        services: selectedServiceIds,
         notes: issueDescription,
-        total_price: calculateTotal()
-      })
-      .eq('id', draftId);
-    if (error) {
-      setError('Error updating draft appointment. Please try again.');
-      return;
+        total_price: calculateTotal(),
+      });
+      const { error } = await supabase
+        .from('appointments')
+        .update({
+          services: selectedServiceIds,
+          notes: issueDescription,
+          total_price: calculateTotal(),
+        })
+        .eq('id', draftAppointment.id);
+      console.log("Update result:", { error });
+      if (error) {
+        console.error("Error updating appointment:", error);
+        setError('Error updating draft appointment. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+      console.log("Update successful, using window.location for navigation...");
+      window.location.href = "/book/appointment";
+      // No need to setIsLoading(false) since we're navigating away
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setError('An unexpected error occurred. Please try again.');
+      setIsLoading(false);
     }
-    router.push("/book/appointment");
+  };
+  
+  // Simplified handleCancelBooking - assuming it might be removed if not part of this page's primary UX
+  // Or would need to be adapted like in app/book/page.tsx
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <p>Loading services...</p> {/* Replace with a proper spinner/skeleton */}
+      </div>
+    );
   }
 
-  const handleCancelBooking = async () => {
-    if (!draftId) return;
-    if (!window.confirm('Are you sure you want to cancel this booking? This cannot be undone.')) return;
-    setIsCancelling(true);
-    await supabase.from('appointments').delete().eq('id', draftId);
-    setIsCancelling(false);
-    router.replace('/portal/bookings');
-  };
+  if (error && !isSaving) { // Don't show general error if a save operation is in progress and might set its own error
+    return (
+      <div className="container mx-auto max-w-md mt-8 text-center p-4">
+        <h2 className="text-xl font-semibold text-red-600 mb-2">An Error Occurred</h2>
+        <p className="mb-4">{error}</p>
+        <Button variant="default" onClick={() => router.push('/book')} className="mr-2">
+          Start Over
+        </Button>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+  
+  if (!draftAppointment && !isLoading) { // Should be caught by redirect earlier, but as a fallback
+     return (
+      <div className="container mx-auto max-w-md mt-8 text-center p-4">
+        <h2 className="text-xl font-semibold text-yellow-600 mb-2">No active booking</h2>
+        <p className="mb-4">We couldn't find your current booking. Please start over.</p>
+        <Button variant="default" onClick={() => router.push('/book')}>
+          Back to Pet Selection
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -132,27 +271,36 @@ export default function SelectServices() {
           <p className="text-center text-gray-600 mb-8">
             A qualified vet will come to assist your pet in a relaxed and familiar environment.
           </p>
+          
+          {/* Display specific saving error if any */}
+          {error && isSaving && (
+             <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">Failed to save: {error}</div>
+          )}
+
+          {allServices.length === 0 && !isLoading && (
+            <p className="text-center text-gray-500">No services available at the moment. Please check back later.</p>
+          )}
 
           <div className="space-y-4 mb-8">
-            {services.map((service) => (
+            {allServices.map((service) => (
               <div
                 key={service.id}
                 className={`border rounded-lg p-6 bg-white hover:border-teal-200 transition-colors cursor-pointer ${
-                  selectedServices.includes(service.id) ? "border-teal-500 ring-1 ring-teal-500" : ""
+                  selectedServiceIds.includes(service.id) ? "border-teal-500 ring-1 ring-teal-500" : ""
                 }`}
-                onClick={() => toggleServiceSelection(service.id)}
+                onClick={() => handleServiceToggle(service.id)}
               >
                 <div className="flex items-start">
                   <Checkbox
                     id={`service-${service.id}`}
-                    checked={selectedServices.includes(service.id)}
-                    onCheckedChange={() => toggleServiceSelection(service.id)}
+                    checked={selectedServiceIds.includes(service.id)}
+                    onCheckedChange={() => handleServiceToggle(service.id)} // Already handled by div click, but good for accessibility
                     className="mr-4 mt-1"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()} // Prevent double toggle if div also handles click
                   />
                   <div className="flex-1">
                     <div className="flex justify-between items-start">
-                      <h3 className="font-medium text-lg">{service.title}</h3>
+                      <h3 className="font-medium text-lg">{service.name}</h3>
                       <span className="font-semibold text-lg">${service.price}</span>
                     </div>
                     <p className="text-gray-600 mt-2">{service.description}</p>
@@ -164,7 +312,7 @@ export default function SelectServices() {
 
           <div className="bg-white p-6 rounded-lg border mb-8">
             <Label htmlFor="issue-description" className="text-base font-medium mb-2 block">
-              Describe your pet's issue
+              Describe your pet's issue (optional)
             </Label>
             <Textarea
               id="issue-description"
@@ -172,13 +320,14 @@ export default function SelectServices() {
               className="min-h-[120px] resize-y"
               value={issueDescription}
               onChange={(e) => setIssueDescription(e.target.value)}
+              // Consider adding onBlur or a separate save button for this if debouncing is too complex for now
             />
             <p className="text-sm text-gray-500 mt-2">
               The more information you provide, the better prepared our vet will be to help your pet.
             </p>
           </div>
 
-          {selectedServices.length > 0 && (
+          {selectedServiceIds.length > 0 && (
             <div className="bg-white p-4 rounded-lg border mb-8">
               <div className="flex justify-between items-center">
                 <span className="font-medium">Total</span>
@@ -189,29 +338,32 @@ export default function SelectServices() {
 
           <div className="flex justify-between mt-12">
             <Button variant="ghost" className="flex items-center gap-2" asChild>
-              <Link href="/book">
+              <Link href="/book"> {/* Should ideally go to previous step based on draft id if available */}
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Link>
             </Button>
             <Button
               onClick={handleNext}
-              disabled={selectedServices.length === 0}
+              disabled={selectedServiceIds.length === 0 || isSaving || isLoading}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              Next
+              {isLoading ? (
+                <>
+                  <span className="mr-2">Processing...</span>
+                  <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                </>
+              ) : (
+                "Next"
+              )}
             </Button>
           </div>
-
-          {error && (
-            <div className="bg-red-100 text-red-700 p-4 rounded mb-4 text-center">{error}</div>
+          
+          {/* General error display, if not related to saving and not in loading state */}
+          {error && !isSaving && !isLoading && (
+             <div className="bg-red-100 text-red-700 p-4 rounded mt-4 text-center">{error}</div>
           )}
 
-          {missingDraft && (
-            <div className="bg-yellow-100 text-yellow-800 p-4 rounded mb-4 text-center">
-              Your booking draft was not found. Redirecting to start...
-            </div>
-          )}
         </div>
       </main>
     </div>
