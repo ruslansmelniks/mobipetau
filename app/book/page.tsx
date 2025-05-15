@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { BookingWarning } from "@/components/booking-warning"
 
 // Define a simple appointment type as per user request
 type DraftAppointment = {
@@ -366,6 +367,8 @@ export default function BookAppointment() {
             </Button>
           </div>
         </div>
+
+        <BookingWarning />
       </main>
     </div>
   )

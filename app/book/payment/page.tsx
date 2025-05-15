@@ -11,6 +11,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { format, parseISO } from 'date-fns'
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { BookingWarning } from "@/components/booking-warning"
 
 // Consistent DraftAppointment type
 type DraftAppointment = {
@@ -411,6 +412,8 @@ export default function PaymentPage() {
             </Button>
           </div>
         </div>
+
+        <BookingWarning />
       </main>
     </div>
   )

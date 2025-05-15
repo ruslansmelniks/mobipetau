@@ -12,6 +12,7 @@ import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { BookingWarning } from "@/components/booking-warning"
 
 // Define types consistent with app/book/page.tsx
 type DraftAppointment = {
@@ -327,6 +328,8 @@ export default function SelectServices() {
           {error && !isSaving && !isLoading && (
              <div className="bg-red-100 text-red-700 p-4 rounded mt-4 text-center">{error}</div>
           )}
+
+          <BookingWarning />
 
         </div>
       </main>

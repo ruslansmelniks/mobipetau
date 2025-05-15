@@ -18,6 +18,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { BookingWarning } from "@/components/booking-warning"
 
 // Time slot options based on time of day
 const timeSlots = {
@@ -467,6 +468,8 @@ export default function AppointmentDetails() {
           </div>
         </div>
       </main>
+
+      <BookingWarning />
     </div>
   );
 }
