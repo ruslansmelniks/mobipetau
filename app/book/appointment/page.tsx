@@ -298,62 +298,43 @@ export default function AppointmentDetails() {
 
   // Save the appointment data and proceed
   const handleNext = async () => {
-    if (!draftId) {
-      setError("No draft appointment found.");
-      return;
-    }
-
-    if (!address || !date || !timeOfDay || !selectedTimeSlot) {
+    if (!draftId || !address || !date || !timeOfDay || !selectedTimeSlot || !isInPerth) {
       setError("Please fill in all required fields.");
       return;
     }
-
-    if (!isInPerth) {
-      setShowPerthWarning(true);
-      return;
-    }
-
+    setError(null);
     try {
-      setLoading(true);
-      console.log("Updating appointment:", draftId);
-      
-      // Create update data
-      const updateData = {
+      console.log("Updating appointment:", {
         address,
-        additional_info: additionalInfo,
-        date: date.toISOString(),
-        time_slot: selectedTimeSlot,
-        time_of_day: timeOfDay,
-        is_in_perth: isInPerth,
-        updated_at: new Date().toISOString()
-      };
-      
-      console.log("Update data:", updateData);
-      
-      // Update the record in the database first
-      const { data, error: updateError } = await supabase
+        date: date?.toISOString(),
+        timeSlot: selectedTimeSlot,
+        timeOfDay: timeOfDay,
+        lat: addressLatLng?.lat,
+        lng: addressLatLng?.lng
+      });
+      const { error } = await supabase
         .from('appointments')
-        .update(updateData)
+        .update({
+          address,
+          additional_info: additionalInfo,
+          date: date?.toISOString(),
+          time_slot: selectedTimeSlot,
+          time_of_day: timeOfDay,
+          latitude: addressLatLng?.lat,
+          longitude: addressLatLng?.lng,
+          is_in_perth: isInPerth
+        })
         .eq('id', draftId);
-
-      if (updateError) {
-        console.error("Error updating appointment:", updateError);
-        setError('Failed to save appointment details.');
-        setLoading(false);
+      if (error) {
+        console.error("Error updating appointment:", error);
+        setError('Error updating draft appointment. Please try again.');
         return;
       }
-      
-      console.log("Appointment details updated successfully, navigating to payment confirmation page");
-      
-      // Make sure we don't have any pending state updates
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Use window.location for a reliable navigation
-      window.location.href = "/book/payment";
+      console.log("Appointment updated successfully, navigating to payment confirmation page");
+      router.push("/book/payment");
     } catch (err) {
-      console.error("Error in handleNext:", err);
-      setError('An unexpected error occurred while saving.');
-      setLoading(false);
+      console.error("Unexpected error:", err);
+      setError('An unexpected error occurred. Please try again.');
     }
   };
 

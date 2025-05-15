@@ -65,140 +65,89 @@ export default function PaymentPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchBookingDetails = async () => {
-      if (!user) {
-        // Wait for user or redirect if session is definitively not there
-        const sessionCheck = await supabase.auth.getSession();
-        if (!sessionCheck.data.session?.user) {
-            setError("No active session. Please log in.");
-            setIsLoading(false);
-            router.push("/login");
-            return;
-        }
-        // if user becomes available, effect re-runs
-        return;
-      }
+    setIsLoading(true);
+    setError(null);
 
-      setIsLoading(true);
-      setError(null);
-
+    const fetchDraftAppointment = async () => {
+      if (!user) return;
       try {
-        // 1. Fetch the latest draft appointment
-        const { data: draft, error: draftError } = await supabase
+        console.log("Fetching draft appointment for payment review");
+        const { data: draft, error: fetchError } = await supabase
           .from('appointments')
-          .select('*')
+          .select(`*, pets (*), services`)
           .eq('pet_owner_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (draftError) throw new Error(`Failed to load booking: ${draftError.message}`);
+          .eq('status', 'pending')
+          .single();
+        if (fetchError) {
+          console.error("Failed to fetch draft appointment:", fetchError);
+          setError('Failed to fetch draft appointment. Please try again.');
+          setIsLoading(false);
+          return;
+        }
         if (!draft) {
-          setError("No booking in progress. Please start from the beginning.");
+          console.error("No draft appointment found");
+          setError('No draft appointment found. Redirecting...');
+          setTimeout(() => {
+            router.replace('/book');
+          }, 2000);
           setIsLoading(false);
-          router.push('/book');
           return;
         }
-
-        // Validate if previous steps are completed
-        if (!draft.pet_id || !draft.service_ids || draft.service_ids.length === 0 || 
-            !draft.appointment_date || !draft.appointment_time || !draft.address || 
-            draft.is_in_perth_serviceable_area === false) {
-          setError("Booking details incomplete. Please review previous steps.");
-          setIsLoading(false);
-          router.push('/book/appointment'); // Or a more appropriate previous step
-          return;
-        }
-        setDraftAppointment(draft as DraftAppointment);
-
-        // 2. Fetch Pet Details
-        if (draft.pet_id) {
-          const { data: petData, error: petError } = await supabase
-            .from('pets')
-            .select('*')
-            .eq('id', draft.pet_id)
-            .single();
-          if (petError) throw new Error(`Failed to load pet details: ${petError.message}`);
-          setPetDetails(petData as Pet);
-        }
-
-        // 3. Fetch Service Details
-        if (draft.service_ids && draft.service_ids.length > 0) {
-          const { data: servicesData, error: servicesError } = await supabase
-            .from('services')
-            .select('*')
-            .in('id', draft.service_ids);
-          if (servicesError) throw new Error(`Failed to load service details: ${servicesError.message}`);
-          setSelectedServicesDetails(servicesData as Service[] || []);
-        }
-
-      } catch (e: any) {
-        console.error("Error fetching booking details:", e);
-        setError(e.message || "An unexpected error occurred while loading your booking.");
+        setDraftAppointment(draft);
+        // Fetch and set pet/service details as needed here
+        // ...
+        setIsLoading(false);
+      } catch (e) {
+        console.error("Error fetching draft appointment:", e);
+        setError('An unexpected error occurred while loading your booking.');
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
-
-    fetchBookingDetails();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, router, supabase]);
+    fetchDraftAppointment();
+  }, [user]);
 
   const handlePayment = async () => {
     if (!draftAppointment || !draftAppointment.total_price) {
-      setError("Cannot proceed to payment: Booking details or total price are missing.");
+      setError("Cannot process payment: missing draft ID or booking summary");
       return;
     }
     setIsProcessingPayment(true);
     setError(null);
-
     try {
-      // Optional: Update draft status to 'processing_payment' or similar
-      const { error: statusUpdateError } = await supabase
-        .from('appointments')
-        .update({ status: 'processing_payment', updated_at: new Date().toISOString() })
-        .eq('id', draftAppointment.id);
-
-      if (statusUpdateError) {
-        console.error("Error updating appointment status:", statusUpdateError);
-        // Decide if this is a critical failure or if we can proceed to payment attempt anyway
-        // For now, log and proceed.
-      }
-
+      console.log("Creating checkout session for appointment:", draftAppointment.id);
+      console.log("Amount:", draftAppointment.total_price);
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appointmentId: draftAppointment.id,
-          amount: draftAppointment.total_price, // Ensure this is in cents if Stripe expects cents
-          userId: user?.id, // Pass user ID for Stripe customer management
-          // Add any other necessary details like pet name, services for description on Stripe page
-          description: `MobiPet Booking for ${petDetails?.name || 'your pet'}`,
-          customer_email: user?.email,
+          amount: draftAppointment.total_price,
         }),
       });
-
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create checkout session.");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Failed to create checkout session:", errorData);
+        setError('Failed to create checkout session. Please try again.');
+        setIsProcessingPayment(false);
+        return;
       }
-
       const { sessionId } = await response.json();
+      console.log("Got session ID:", sessionId);
       const stripe = await stripePromise;
-      if (stripe && sessionId) {
-        const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
-        if (stripeError) {
-          throw new Error(stripeError.message || "Failed to redirect to Stripe.");
-        }
-      } else {
-        throw new Error ("Stripe.js or session ID not available.");
+      if (!stripe) {
+        console.error("Stripe failed to initialize");
+        setError('Payment system unavailable. Please try again later.');
+        setIsProcessingPayment(false);
+        return;
       }
-    } catch (e: any) {
-      console.error("Payment handling error:", e);
-      setError(`Payment error: ${e.message}. Please try again or contact support.`);
-      // Optional: Revert status if it was updated
-      // await supabase.from('appointments').update({ status: 'pending_confirmation' }).eq('id', draftAppointment.id);
+      console.log("Redirecting to Stripe checkout...");
+      await stripe.redirectToCheckout({ sessionId });
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      setError('Error creating checkout session. Please try again.');
+    } finally {
+      setIsProcessingPayment(false);
     }
-    setIsProcessingPayment(false);
   };
   
   const SummaryItem = ({ icon, label, value }: { icon: ReactNode, label: string, value?: string | number | null }) => (
