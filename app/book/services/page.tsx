@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
 
 // Define types consistent with app/book/page.tsx
 type DraftAppointment = {
@@ -97,31 +98,18 @@ export default function SelectServices() {
           router.push("/login");
           return;
         }
-        // Fetch Draft Appointment as before, but check both 'draft' and 'pending' statuses
-        const { data: draft, error: draftError } = await supabase
-          .from('appointments')
-          .select('*')
-          .eq('pet_owner_id', user.id)
-          .or('status.eq.draft,status.eq.pending')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (debug) console.log("Draft fetch result (services):", draft, draftError);
-        if (draftError) {
-          setError(`Failed to load booking details: ${draftError.message}. Please try again.`);
-          setIsLoading(false);
-          return;
-        }
+        // Use new draft service
+        const draft = await getOrCreateDraft(supabase, user.id);
         if (!draft || !draft.pet_id) {
           setError("No booking in progress or pet not selected. Please start again.");
           setIsLoading(false);
           router.push('/book');
           return;
         }
-        setDraftAppointment(draft as DraftAppointment);
-        setSelectedServiceIds(draft.services || []); // Use 'services' field from appointment
+        setDraftAppointment(draft);
+        const draftServices = Array.isArray(draft.services) ? draft.services : (typeof draft.services === 'string' ? JSON.parse(draft.services) : []);
+        setSelectedServiceIds(draftServices);
         setIssueDescription(draft.notes || "");
-        // Use hard-coded services
         setAllServices(services);
       } catch (e: any) {
         setError(`An unexpected error occurred: ${e.message}`);
@@ -150,23 +138,16 @@ export default function SelectServices() {
     }
     setIsSaving(true);
     setError(null);
-    const payload = {
-      ...updatedFields,
-      updated_at: new Date().toISOString(),
-    };
-    const { data: newDraft, error: updateError } = await supabase
-      .from('appointments')
-      .update(payload)
-      .eq('id', draftAppointment.id)
-      .select()
-      .single();
-    setIsSaving(false);
-    if (updateError) {
+    try {
+      const newDraft = await updateDraft(supabase, draftAppointment.id, updatedFields);
+      setDraftAppointment(newDraft);
+      setIsSaving(false);
+      return newDraft;
+    } catch (updateError: any) {
+      setIsSaving(false);
       setError(`Failed to save changes: ${updateError.message}. Please try again.`);
       return null;
     }
-    setDraftAppointment(newDraft as DraftAppointment);
-    return newDraft as DraftAppointment;
   };
 
   const handleServiceToggle = async (serviceId: string) => {
@@ -185,34 +166,17 @@ export default function SelectServices() {
     setError(null);
     try {
       setIsLoading(true);
-      console.log("Updating appointment:", {
+      await updateDraft(supabase, draftAppointment.id, {
         services: selectedServiceIds,
         notes: issueDescription,
         total_price: calculateTotal(),
       });
-      const { error } = await supabase
-        .from('appointments')
-        .update({
-          services: selectedServiceIds,
-          notes: issueDescription,
-          total_price: calculateTotal(),
-        })
-        .eq('id', draftAppointment.id);
-      console.log("Update result:", { error });
-      if (error) {
-        console.error("Error updating appointment:", error);
-        setError('Error updating draft appointment. Please try again.');
-        setIsLoading(false);
-        return;
-      }
-      console.log("Update successful, using window.location for navigation...");
-      window.location.href = "/book/appointment";
-      // No need to setIsLoading(false) since we're navigating away
-    } catch (err) {
-      console.error("Unexpected error:", err);
-      setError('An unexpected error occurred. Please try again.');
-      setIsLoading(false);
+      router.push("/book/appointment");
+    } catch (err: any) {
+      setError('Error updating services. Please try again.');
+      console.error(err);
     }
+    setIsLoading(false);
   };
   
   // Simplified handleCancelBooking - assuming it might be removed if not part of this page's primary UX

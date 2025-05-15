@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { User } from "@supabase/supabase-js"
 import { useRouter, useSearchParams } from "next/navigation"
+import { updateDraft } from "@/lib/draftService"
 
 interface ConfirmationClientProps {
-  user: User | null; 
-  // sessionId and appointmentId will be read from URL search params
+  user: User | null;
+  sessionId?: string;
+  // appointmentId will be read from URL search params
 }
 
 interface ConfirmationData {
@@ -23,7 +25,7 @@ interface ConfirmationData {
   appointmentTime?: string;
 }
 
-export default function ConfirmationClient({ user }: ConfirmationClientProps) {
+export default function ConfirmationClient({ user, sessionId }: ConfirmationClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 

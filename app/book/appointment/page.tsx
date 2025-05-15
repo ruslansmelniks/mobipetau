@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
+import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
 
 // Time slot options based on time of day
 const timeSlots = {
@@ -211,130 +212,62 @@ export default function AppointmentDetails() {
 
   // Load or create draft appointment
   useEffect(() => {
-    const fetchOrCreateDraft = async () => {
-      if (sessionLoading) {
-        console.log("Session is still loading, waiting...");
-        return;
-      }
-      if (!user) {
-        console.log("No user found after session loaded");
-        setLoading(false);
-        setError("User not authenticated. Please log in again.");
-        return;
-      }
-      console.log("User authenticated:", user.id);
+    if (!user) return;
+    setError(null);
+    setLoading(true);
+    // Fetch existing draft appointment
+    const fetchDraftAppointment = async () => {
       try {
-        const { error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error("Session error:", sessionError);
-          setLoading(false);
-          setError("Session error. Please log in again.");
-          return;
+        const draft = await getOrCreateDraft(supabase, user.id);
+        setDraftId(draft.id);
+        // Set address if already entered
+        if (draft.address) setAddress(draft.address);
+        // Set additional info if any
+        if (draft.additional_info) setAdditionalInfo(draft.additional_info);
+        // Set date if already selected
+        if (draft.date) setDate(new Date(draft.date));
+        // Set time slot if already selected
+        if (draft.time_slot) {
+          setSelectedTimeSlot(draft.time_slot);
+          // Set time of day based on time slot
+          const timeStr = draft.time_slot.split(' ')[0];
+          const hour = parseInt(timeStr.split(':')[0]);
+          if (hour < 10) setTimeOfDay('morning');
+          else if (hour < 17) setTimeOfDay('afternoon');
+          else setTimeOfDay('evening');
         }
-        console.log("Fetching draft appointment for user:", user.id);
-        
-        // Try to fetch existing draft
-        const { data: draft, error: fetchError } = await supabase
-          .from('appointments')
-          .select('*')
-          .eq('pet_owner_id', user.id)
-          .or('status.eq.draft,status.eq.pending')
-          .single();
-        
-        if (fetchError && fetchError.code !== 'PGRST116') {
-          console.error("Error fetching draft:", fetchError);
-          setError('Failed to fetch appointment details.');
-          setLoading(false);
-          return;
+        // Set map coordinates if already set
+        if (draft.latitude && draft.longitude) {
+          setAddressLatLng({ lat: draft.latitude, lng: draft.longitude });
         }
-        
-        if (!draft) {
-          console.log("No draft found, creating new draft");
-          
-          // Create a new draft
-          const { data: newDraft, error: createError } = await supabase
-            .from('appointments')
-            .insert({
-              pet_owner_id: user.id,
-              status: 'pending',
-              created_at: new Date().toISOString()
-            })
-            .select()
-            .single();
-            
-          if (createError) {
-            console.error("Error creating draft:", createError);
-            setError('Failed to create appointment.');
-            setLoading(false);
-            return;
-          }
-          
-          setDraftId(newDraft.id);
-          console.log("Created new draft:", newDraft.id);
-        } else {
-          console.log("Found existing draft:", draft.id);
-          setDraftId(draft.id);
-          
-          // Populate form with existing data
-          if (draft.address) {
-            setAddress(draft.address);
-            checkIfInPerth(draft.address);
-          }
-          if (draft.additional_info) setAdditionalInfo(draft.additional_info);
-          if (draft.date) setDate(new Date(draft.date));
-          if (draft.time_of_day) setTimeOfDay(draft.time_of_day);
-          if (draft.time_slot) setSelectedTimeSlot(draft.time_slot);
-        }
-      } catch (err) {
-        console.error("Unexpected error:", err);
-        setError('An unexpected error occurred.');
-      } finally {
-        setLoading(false);
+      } catch (err: any) {
+        setError('Failed to fetch booking information. Please try again.');
+        console.error(err);
       }
+      setLoading(false);
     };
-    
-    fetchOrCreateDraft();
-  }, [user, supabase, sessionLoading]);
+    fetchDraftAppointment();
+  }, [user]);
 
   // Save the appointment data and proceed
   const handleNext = async () => {
-    if (!draftId || !address || !date || !timeOfDay || !selectedTimeSlot || !isInPerth) {
-      setError("Please fill in all required fields.");
-      return;
-    }
+    if (!draftId) return;
     setError(null);
     try {
-      console.log("Updating appointment:", {
+      await updateDraft(supabase, draftId, {
         address,
+        additional_info: additionalInfo,
         date: date?.toISOString(),
-        timeSlot: selectedTimeSlot,
-        timeOfDay: timeOfDay,
-        lat: addressLatLng?.lat,
-        lng: addressLatLng?.lng
+        time_slot: selectedTimeSlot,
+        time_of_day: timeOfDay,
+        latitude: addressLatLng?.lat,
+        longitude: addressLatLng?.lng,
+        is_in_perth: isInPerth
       });
-      const { error } = await supabase
-        .from('appointments')
-        .update({
-          address,
-          additional_info: additionalInfo,
-          date: date?.toISOString(),
-          time_slot: selectedTimeSlot,
-          time_of_day: timeOfDay,
-          latitude: addressLatLng?.lat,
-          longitude: addressLatLng?.lng,
-          is_in_perth: isInPerth
-        })
-        .eq('id', draftId);
-      if (error) {
-        console.error("Error updating appointment:", error);
-        setError('Error updating draft appointment. Please try again.');
-        return;
-      }
-      console.log("Appointment updated successfully, navigating to payment confirmation page");
       router.push("/book/payment");
-    } catch (err) {
-      console.error("Unexpected error:", err);
-      setError('An unexpected error occurred. Please try again.');
+    } catch (err: any) {
+      setError('Error updating appointment details. Please try again.');
+      console.error(err);
     }
   };
 

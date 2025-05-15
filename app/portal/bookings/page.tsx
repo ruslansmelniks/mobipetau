@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Calendar, Clock, MapPin, AlertCircle, ChevronRight, Search, Copy, Check } from "lucide-react"
+import { Calendar, Clock, MapPin, AlertCircle, ChevronRight, Search, Copy, Check, Cat, Dog, Home, Heart, MessageCircle, AlertTriangle, Receipt, CalendarX, CheckCircle, Clock as ClockIcon, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -150,6 +150,14 @@ export default function BookingsPage() {
         '1': 'After hours home visit',
         '2': 'At-Home Peaceful Euthanasia',
       };
+      const serviceIconMap = {
+        '1': <Home className="h-4 w-4 mr-1 text-teal-700" />,
+        '2': <Heart className="h-4 w-4 mr-1 text-pink-600" />,
+      };
+      const serviceColorMap = {
+        '1': 'bg-teal-100 text-teal-800',
+        '2': 'bg-pink-100 text-pink-800',
+      };
       return (
         <div className="flex flex-wrap gap-2 mt-1">
           {serviceIds.map((serviceId: string, index: number) => {
@@ -157,8 +165,9 @@ export default function BookingsPage() {
             return (
               <span 
                 key={`service-${appointmentId}-${serviceId}-${index}`} 
-                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800"
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${serviceColorMap[serviceId] || 'bg-teal-100 text-teal-800'}`}
               >
+                {serviceIconMap[serviceId]}
                 {label}
               </span>
             );
@@ -181,25 +190,34 @@ export default function BookingsPage() {
     const appointmentTime = appointment.time_slot || "Time not specified";
     const paymentAmount = appointment.total_price ? `$${appointment.total_price}` : "N/A";
 
+    const statusIconMap = {
+      confirmed: <CheckCircle className="h-4 w-4 text-green-600 mr-1" />, 
+      pending: <ClockIcon className="h-4 w-4 text-blue-600 mr-1" />, 
+      pending_vet: <ClockIcon className="h-4 w-4 text-yellow-600 mr-1" />, 
+      rescheduled: <ClockIcon className="h-4 w-4 text-blue-600 mr-1" />, 
+      completed: <CheckCircle className="h-4 w-4 text-gray-600 mr-1" />, 
+      cancelled: <XCircle className="h-4 w-4 text-red-600 mr-1" />
+    };
+
     return (
       <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-6">
         {/* Appointment Header */}
         <div className="p-6 border-b">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-gray-200">
+              <div className="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 bg-gray-200 flex items-center justify-center">
                 {petImage ? (
                   <Image
                     src={petImage}
                     alt={petName}
-                    width={48}
-                    height={48}
+                    width={64}
+                    height={64}
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
-                    <span>No img</span>
-                  </div>
+                  <span className="text-gray-400">
+                    {petType.toLowerCase().includes('cat') ? <Cat className="w-10 h-10" /> : <Dog className="w-10 h-10" />}
+                  </span>
                 )}
               </div>
               <div>
@@ -210,7 +228,7 @@ export default function BookingsPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>{statusInfo.label}</span>
+              <span className={`flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>{statusIconMap[appointment.status] || null}{statusInfo.label}</span>
               <button 
                 onClick={() => {
                   if (appointment && appointment.id) { // Ensure appointment and id exist
@@ -269,15 +287,17 @@ export default function BookingsPage() {
                     <p className="text-xs text-gray-500 font-medium mb-1">Transaction ID:</p>
                     <div className="bg-gray-100 p-2 rounded-md overflow-hidden flex items-center">
                       <code className="text-xs text-gray-600 font-mono overflow-hidden truncate mr-2 flex-1">
-                        {appointment.payment_id}
+                        {appointment.payment_id.slice(0, 10) + '...' + appointment.payment_id.slice(-6)}
                       </code>
                       <button
                         className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigator.clipboard.writeText(appointment.payment_id);
-                          setCopiedId(appointment.id);
-                          setTimeout(() => setCopiedId(null), 2000);
+                          if (appointment.payment_id) {
+                            navigator.clipboard.writeText(appointment.payment_id);
+                            setCopiedId(appointment.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          }
                         }}
                         title="Copy transaction ID"
                       >
@@ -312,7 +332,7 @@ export default function BookingsPage() {
             <Button variant="outline" asChild>
               <Link href={`/portal/messages?appointment=${appointment.id}`}>
                 <span className="flex items-center">
-                  Message vet <ChevronRight className="ml-1 h-4 w-4" />
+                  <MessageCircle className="mr-1 h-4 w-4" /> Message vet
                 </span>
               </Link>
             </Button>
@@ -321,7 +341,7 @@ export default function BookingsPage() {
                 <>
                   <Button 
                     variant="outline" 
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 flex items-center"
                     onClick={async () => {
                       if (!user) return;
                       if (window.confirm("Are you sure you want to cancel this appointment? This cannot be undone.")) {
@@ -365,7 +385,7 @@ export default function BookingsPage() {
                       }
                     }}
                   >
-                    Yes, cancel it
+                    <AlertTriangle className="mr-1 h-4 w-4" /> Yes, cancel it
                   </Button>
                 </>
               )}
@@ -417,7 +437,7 @@ export default function BookingsPage() {
           ) : (
             <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
               <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                <Calendar className="h-8 w-8 text-gray-400" />
+                <CalendarX className="h-8 w-8 text-gray-400" />
               </div>
               <h2 className="text-xl font-semibold mb-2">No upcoming appointments</h2>
               <p className="text-gray-600 mb-6">You don't have any upcoming appointments scheduled.</p>
@@ -437,7 +457,7 @@ export default function BookingsPage() {
           ) : (
             <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
               <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                <Calendar className="h-8 w-8 text-gray-400" />
+                <CalendarX className="h-8 w-8 text-gray-400" />
               </div>
               <h2 className="text-xl font-semibold mb-2">No past appointments</h2>
               <p className="text-gray-600 mb-6">You don't have any past appointments.</p>

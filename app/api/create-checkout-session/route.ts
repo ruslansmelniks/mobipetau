@@ -1,68 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
 
-// Initialize Stripe
+type ErrorResponse = {
+  error: string;
+  details?: any;
+};
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-04-30.basil', // Reverted to original API version
+  apiVersion: '2023-10-16' as any,
 });
-
-// Initialize Supabase Admin Client
-// Ensure these environment variables are set in your Vercel/server environment
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const {
-      appointmentId,
-      amount, // Expected in dollars from client
-      userId,
-      description,
-      customer_email
-    } = body;
-
-    // Validate required fields from the client
-    if (!appointmentId || typeof amount !== 'number' || !userId || !customer_email) {
-      return NextResponse.json({ error: 'Missing required payment details.' }, { status: 400 });
+    const { amount, appointmentId } = await req.json();
+    console.log("Creating checkout session:", { appointmentId, amount });
+    if (!appointmentId) {
+      console.error("Missing appointmentId in request");
+      return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
-
-    // 1. Fetch the appointment from Supabase to validate
-    const { data: appointment, error: fetchError } = await supabaseAdmin
+    if (!amount || isNaN(amount) || amount <= 0) {
+      console.error("Invalid amount:", amount);
+      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    }
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name) {
+            return req.cookies.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
+    const { data: appointment, error: appointmentError } = await supabase
       .from('appointments')
-      .select('id, pet_owner_id, total_price, status')
+      .select(`
+        id,
+        pet_id,
+        services,
+        date,
+        time_slot,
+        pets (name, type)
+      `)
       .eq('id', appointmentId)
-      .eq('pet_owner_id', userId)
       .single();
-
-    if (fetchError || !appointment) {
-      console.error('Error fetching appointment for payment creation or appointment not found:', fetchError ? JSON.stringify(fetchError, null, 2) : 'Appointment not found');
-      return NextResponse.json({ error: 'Invalid appointment or unable to verify booking.' }, { status: 404 });
+    if (appointmentError) {
+      console.error("Error fetching appointment details:", appointmentError);
     }
-
-    // 2. Validate the amount (total_price is stored in dollars, Stripe expects cents)
-    // Perform a tolerance check for potential floating point inaccuracies if necessary
-    const expectedAmountInCents = Math.round(appointment.total_price! * 100);
-    const receivedAmountInCents = Math.round(amount * 100);
-
-    if (expectedAmountInCents !== receivedAmountInCents) {
-      console.error(`Price mismatch for appointment ${appointmentId}. Expected: ${expectedAmountInCents}, Received: ${receivedAmountInCents}`);
-      return NextResponse.json({ error: 'Payment amount mismatch. Please try again.' }, { status: 400 });
+    let description = "MobiPet Veterinary Services";
+    let petName = '';
+    if (appointment?.pets) {
+      if (Array.isArray(appointment.pets) && appointment.pets.length > 0) {
+        const firstPet = appointment.pets[0];
+        if (firstPet && typeof firstPet === 'object' && 'name' in firstPet) {
+          petName = (firstPet as { name: string }).name;
+        }
+      } else if (typeof appointment.pets === 'object' && !Array.isArray(appointment.pets) && (appointment.pets as any).name) {
+        petName = (appointment.pets as any).name;
+      }
     }
-    
-    // 3. Validate appointment status (e.g., it should be in a state ready for payment)
-    // Example: Allow payment if status is 'pending_confirmation' or 'processing_payment'
-    if (!['pending_confirmation', 'processing_payment'].includes(appointment.status)) {
-        console.error(`Invalid status for payment for appointment ${appointmentId}. Status: ${appointment.status}`);
-        return NextResponse.json({ error: 'This booking is not currently in a state that allows payment.' }, { status: 400 });
+    if (petName) {
+      description = `Vet appointment for ${petName}`;
     }
-
-    const successUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/book/confirmation?session_id={CHECKOUT_SESSION_ID}&appointment_id=${appointmentId}`;
-    const cancelUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/book/payment?appointment_id=${appointmentId}`; // Or redirect to a general booking page
-
-    // 4. Create a Stripe Checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -70,44 +73,38 @@ export async function POST(req: NextRequest) {
           price_data: {
             currency: 'aud',
             product_data: {
-              name: description || `MobiPet Vet Booking #${appointmentId.substring(0,8)}`,
-              // You can add more details here, or even images if Stripe supports it for your setup
-              // images: [`${process.env.NEXT_PUBLIC_BASE_URL}/logo.png`], 
+              name: 'MobiPet Vet Appointment',
+              description: description,
             },
-            unit_amount: expectedAmountInCents, // Use the validated amount in cents
+            unit_amount: Math.round(amount * 100),
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      customer_email: customer_email, // Pre-fill customer email
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      success_url: `${req.nextUrl.origin}/book/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.nextUrl.origin}/book/payment`,
       metadata: {
-        appointment_id: appointmentId,
-        user_id: userId,
-      },
-      // To ensure the payment is completed before fulfilling the order, you might set payment_intent_data
-      // payment_intent_data: {
-      //   setup_future_usage: 'off_session', // If you want to save card for later
-      // },
+        appointmentId
+      }
     });
-
-    if (!session.id) {
-        throw new Error('Stripe session ID not found after creation.');
-    }
-
     return NextResponse.json({ sessionId: session.id });
-
   } catch (error: any) {
-    console.error("Stripe session creation error:", error.type ? error : JSON.stringify(error, null, 2));
-    // Default error message
-    let errorMessage = 'Could not create payment session.';
-    if (error.type === 'StripeCardError') {
-        errorMessage = error.message; // More specific error from Stripe
+    console.error('Error creating checkout session:', error);
+    const errorResponse: ErrorResponse = {
+      error: 'Failed to create checkout session'
+    };
+    if (error.type === 'StripeInvalidRequestError') {
+      errorResponse.error = `Stripe error: ${error.message}`;
+      errorResponse.details = {
+        type: error.type,
+        code: error.code,
+        param: error.param
+      };
+    } else if (error.message) {
+      errorResponse.error = error.message;
     }
-    // Add more specific Stripe error handling if needed based on error.type
-    
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    console.error('Detailed error:', errorResponse);
+    return NextResponse.json(errorResponse, { status: 400 });
   }
 }

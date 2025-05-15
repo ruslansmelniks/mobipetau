@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowLeft, Plus } from "lucide-react"
+import { ArrowLeft, Plus, Dog, Cat, PawPrint } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
+import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
 
 // Define a simple appointment type as per user request
 type DraftAppointment = {
@@ -77,15 +78,19 @@ export default function BookAppointment() {
       if (petError) {
         console.error('Error fetching pets:', petError);
         setError('Failed to load your pets. Please try refreshing the page.');
-        // Continue to fetch draft appointment, pets are not strictly blocking for draft creation
       } else {
         setPets(petData || []);
       }
       
-      await fetchDraftAppointment(currentSessionUser.id);
-      // setIsLoading(false) will be called within fetchDraftAppointment or after it completes if it doesn't set it.
-      // However, fetchDraftAppointment doesn't set it on its own. So set it here.
-      setIsLoading(false); 
+      try {
+        const draft = await getOrCreateDraft(supabase, currentSessionUser.id);
+        setDraftAppointment(draft);
+        if (draft.pet_id) setSelectedPet(draft.pet_id);
+      } catch (err: any) {
+        setError('Error initializing booking. Please try again.');
+        setDraftAppointment(null);
+      }
+      setIsLoading(false);
     };
 
     fetchInitialData();
@@ -101,106 +106,34 @@ export default function BookAppointment() {
     }
   }, [draftAppointment]);
 
-  const fetchDraftAppointment = async (userId: string) => {
-    if (debug) console.log("Examining appointments table structure...");
-    const { data: tableInfo, error: tableError } = await supabase
-      .from('appointments')
-      .select('*')
-      .limit(1);
-    if (debug) console.log("Table structure:", tableInfo, "Error (if any):", tableError);
-    try {
-      // Try to fetch draft with status 'draft' or 'pending'
-      let { data: draft, error: fetchError } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('pet_owner_id', userId)
-        .or('status.eq.draft,status.eq.pending')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (debug) console.log("Draft fetch result:", draft, fetchError);
-      if (fetchError && fetchError.code !== '406' && fetchError.code !== 'PGRST116') {
-        console.error('Error fetching appointment:', fetchError);
-        setError(`Error fetching booking: ${fetchError.message}. Please try reloading.`);
-        setDraftAppointment(null);
-        return;
-      }
-      let newDraftData = null;
-      if (!draft) {
-        if (debug) console.log("No draft found, creating new draft");
-        const { data: newDraft, error: insertError } = await supabase
-          .from('appointments')
-          .insert({ 
-            pet_owner_id: userId,
-            status: 'draft',
-            created_at: new Date().toISOString(),
-            notes: '',
-            services: ['1'], // Default service
-            total_price: 299, // Default price
-            is_in_perth: true, // Default location status
-          })
-          .select()
-          .single();
-        if (debug) console.log("New draft creation result:", newDraft, insertError);
-        if (insertError) {
-          setError(`Error creating draft: ${insertError.message}. Please try reloading.`);
-          setDraftAppointment(null);
-          return;
-        }
-        setDraftAppointment(newDraft);
-        newDraftData = newDraft;
-      } else {
-        setDraftAppointment(draft);
-      }
-      const recordToLog = newDraftData || draft;
-      if (recordToLog && debug) {
-        console.log('Fetched/Created Appointment Record (structure debug):', JSON.stringify(recordToLog, null, 2));
-      }
-    } catch (e: any) {
-      console.error('Unexpected error in fetchDraftAppointment:', e);
-      setError(`An unexpected error occurred: ${e.message}. Please try reloading.`);
-      setDraftAppointment(null);
-    }
-  };
-
   const handlePetSelect = async (petId: string) => {
     if (!draftAppointment || !draftAppointment.id) {
       setError("Cannot select pet: No booking loaded. Please refresh.");
       return;
     }
     setSelectedPet(petId); // Optimistic update for UI
-
-    const { data: updatedDraft, error: updateError } = await supabase
-      .from('appointments')
-      .update({ pet_id: petId, updated_at: new Date().toISOString() })
-      .eq('id', draftAppointment.id)
-      .select()
-      .single();
-
-    if (updateError) {
+    try {
+      const updatedDraft = await updateDraft(supabase, draftAppointment.id, { pet_id: petId });
+      setDraftAppointment(updatedDraft);
+      setError(null);
+    } catch (updateError: any) {
       console.error('Error updating draft appointment with pet_id:', updateError);
       setError(`Error saving pet selection: ${updateError.message}. Please try selecting again.`);
-      // Optionally revert selectedPet, though current UI will show selection and an error
-      return;
-    }
-
-    if (updatedDraft) {
-      setDraftAppointment(updatedDraft as DraftAppointment); // Update local draft state
-      setError(null); // Clear previous errors on successful update
-    } else {
-      // Should not happen if updateError is null and select().single() is used
-      setError('Failed to update draft appointment with pet selection. Please try again.');
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!selectedPet || !draftAppointment) {
-       // This case should ideally be prevented by the disabled state of the button
-      setError("Please select a pet before proceeding."); 
+      setError("Please select a pet before proceeding.");
       return;
     }
-    // Pet selection is already saved to DB via handlePetSelect
-    router.push("/book/services");
+    setError(null);
+    try {
+      await updateDraft(supabase, draftAppointment.id, { pet_id: selectedPet });
+      router.push("/book/services");
+    } catch (err: any) {
+      setError('Error updating pet selection. Please try again.');
+    }
   };
 
   const handleCancelBooking = async () => {
@@ -250,7 +183,14 @@ export default function BookAppointment() {
             setIsLoading(true); 
             supabase.auth.getSession().then(({ data: { session } }) => {
               if (session?.user) {
-                fetchDraftAppointment(session.user.id).finally(() => setIsLoading(false));
+                getOrCreateDraft(supabase, session.user.id).then((draft) => {
+                  setDraftAppointment(draft);
+                  setIsLoading(false);
+                }).catch((err) => {
+                  setError('Error initializing booking. Please try again.');
+                  setDraftAppointment(null);
+                  setIsLoading(false);
+                });
               } else {
                 setError('Session expired or user not found. Please log in again.');
                 setIsLoading(false);
@@ -287,7 +227,14 @@ export default function BookAppointment() {
             setIsLoading(true);
              supabase.auth.getSession().then(({ data: { session } }) => {
               if (session?.user) {
-                fetchDraftAppointment(session.user.id).finally(() => setIsLoading(false));
+                getOrCreateDraft(supabase, session.user.id).then((draft) => {
+                  setDraftAppointment(draft);
+                  setIsLoading(false);
+                }).catch((err) => {
+                  setError('Error initializing booking. Please try again.');
+                  setDraftAppointment(null);
+                  setIsLoading(false);
+                });
               } else {
                 setError('Session expired or user not found. Please log in again.');
                 setIsLoading(false);
@@ -324,43 +271,67 @@ export default function BookAppointment() {
           )}
 
           {pets.length > 0 ? (
-            <RadioGroup value={selectedPet || ""} onValueChange={handlePetSelect} className="space-y-4 mb-8">
-              {pets.map((pet) => (
-                <div
-                  key={pet.id}
-                  className={`border rounded-lg p-4 flex items-center bg-white hover:border-teal-200 transition-colors cursor-pointer ${
-                    selectedPet === pet.id ? "border-teal-500 ring-1 ring-teal-500" : ""
-                  }`}
-                  onClick={() => handlePetSelect(pet.id)}
-                >
-                  <RadioGroupItem
-                    value={pet.id}
-                    id={`pet-${pet.id}`}
-                    className="mr-4"
-                    onClick={(e) => e.stopPropagation()}
-                    checked={selectedPet === pet.id}
-                  />
-                  <div className="w-[60px] h-[60px] overflow-hidden flex items-center justify-center rounded-md mr-4">
-                    {pet.image ? (
-                      <Image
-                        src={pet.image || "/placeholder.svg"}
-                        alt={pet.name}
-                        width={60}
-                        height={60}
-                        className="object-cover w-full h-full"
+            <RadioGroup
+              value={selectedPet || ""}
+              onValueChange={handlePetSelect}
+              className="space-y-4 mb-8"
+            >
+              {pets.map((pet) => {
+                // Determine species icon
+                let speciesIcon = <PawPrint className="inline-block h-4 w-4 text-teal-600 mr-1" />;
+                if (pet.species?.toLowerCase().includes("dog")) speciesIcon = <Dog className="inline-block h-4 w-4 text-teal-600 mr-1" />;
+                if (pet.species?.toLowerCase().includes("cat")) speciesIcon = <Cat className="inline-block h-4 w-4 text-teal-600 mr-1" />;
+                // Gender icon
+                let genderIcon = null;
+                if (pet.gender?.toLowerCase() === "male" || pet.gender === "M") genderIcon = <span className="inline-block text-blue-500 mr-1" title="Male">♂</span>;
+                if (pet.gender?.toLowerCase() === "female" || pet.gender === "F") genderIcon = <span className="inline-block text-pink-500 mr-1" title="Female">♀</span>;
+                // Age string
+                let ageString = pet.age ? pet.age : (pet.dateOfBirth ? calculateAge(pet.dateOfBirth) : null);
+                return (
+                  <div
+                    key={pet.id}
+                    className={`border rounded-xl p-4 flex flex-row items-center bg-white transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-teal-300 group min-h-[100px] relative ${selectedPet === pet.id ? "border-teal-500 ring-2 ring-teal-400 shadow-lg" : ""}`}
+                    onClick={() => handlePetSelect(pet.id)}
+                  >
+                    <div className="flex-shrink-0 flex items-center justify-center mr-4">
+                      <RadioGroupItem
+                        value={pet.id}
+                        id={`pet-${pet.id}`}
+                        onClick={e => e.stopPropagation()}
+                        checked={selectedPet === pet.id}
                       />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-400">
-                        No img
+                    </div>
+                    <div className="w-[72px] h-[72px] overflow-hidden flex items-center justify-center rounded-lg bg-gray-100 border border-gray-200 mr-6 flex-shrink-0">
+                      {pet.image ? (
+                        <Image
+                          src={pet.image || "/placeholder.svg"}
+                          alt={pet.name}
+                          width={72}
+                          height={72}
+                          className="object-cover w-full h-full"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          {speciesIcon}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <h3 className="font-semibold text-lg mb-1 truncate">{pet.name}</h3>
+                      <div className="text-gray-600 text-sm flex items-center mb-1">
+                        {speciesIcon}
+                        <span className="truncate">{pet.species}{pet.breed ? ` - ${pet.breed}` : ""}</span>
                       </div>
-                    )}
+                      <div className="text-gray-500 text-xs flex items-center gap-2">
+                        {genderIcon}
+                        {pet.gender && <span>{pet.gender[0].toUpperCase()}</span>}
+                        {pet.gender && ageString && <span className="mx-1">•</span>}
+                        {ageString && <span>{ageString}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium">{pet.name}</h3>
-                    <p className="text-gray-600">{pet.species}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </RadioGroup>
           ) : (
             <div className="text-center text-gray-500 mb-8">You have no pets yet. Please add a new pet to continue.</div>
@@ -398,4 +369,20 @@ export default function BookAppointment() {
       </main>
     </div>
   )
+}
+
+function calculateAge(dateOfBirth: string): string {
+  if (!dateOfBirth) return "";
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let years = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    years--;
+  }
+  if (years < 1) {
+    const months = years * 12 + monthDiff;
+    return `${months} months`;
+  }
+  return `${years} years`;
 }
