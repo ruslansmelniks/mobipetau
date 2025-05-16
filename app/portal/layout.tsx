@@ -4,15 +4,14 @@ import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
 import { createPagesBrowserClient } from "@supabase/auth-helpers-nextjs"
 import { User } from "@supabase/supabase-js"
 import { UserData, UserProfile } from "@/types"
+import { NotificationBell } from "@/components/notification-bell"
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const [hasNotifications, setHasNotifications] = useState(true)
   const [user, setUser] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -105,18 +104,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 <span className="text-gray-500">Welcome,</span>{" "}
                 <span className="font-medium">{user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'User'}</span>
               </div>
-              <button
-                className={`w-10 h-10 rounded-full flex items-center justify-center relative ${
-                  hasNotifications ? "bg-amber-50" : ""
-                }`}
-                aria-label="Notifications"
-                onClick={() => setHasNotifications(!hasNotifications)}
-              >
-                <Bell className={`h-5 w-5 ${hasNotifications ? "text-amber-600" : "text-gray-500"}`} />
-                {hasNotifications && (
-                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
-                )}
-              </button>
+              <NotificationBell />
               <Button variant="outline" size="sm" className="font-medium" onClick={handleLogout}>
                 Log out
               </Button>

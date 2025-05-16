@@ -3,15 +3,12 @@
 import type React from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { VetPortalTabs } from "@/components/vet-portal-tabs"
-import { useState } from "react"
+import { NotificationBell } from "@/components/notification-bell"
 import { SmartLogo } from "@/components/smart-logo"
 
 export default function VetPortalLayout({ children }: { children: React.ReactNode }) {
-  const [hasNotifications, setHasNotifications] = useState(true)
-
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b">
@@ -19,18 +16,7 @@ export default function VetPortalLayout({ children }: { children: React.ReactNod
           <div className="flex justify-between items-center">
             <SmartLogo />
             <div className="flex items-center gap-4">
-              <button
-                className={`w-10 h-10 rounded-full flex items-center justify-center relative ${
-                  hasNotifications ? "bg-amber-50" : ""
-                }`}
-                aria-label="Notifications"
-                onClick={() => setHasNotifications(!hasNotifications)}
-              >
-                <Bell className={`h-5 w-5 ${hasNotifications ? "text-amber-600" : "text-gray-500"}`} />
-                {hasNotifications && (
-                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
-                )}
-              </button>
+              <NotificationBell />
               <Button variant="outline" size="sm" className="font-medium" asChild>
                 <Link href="/logout">Log out</Link>
               </Button>
