@@ -19,12 +19,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <SupabaseProvider>
-          <header className="bg-white border-b">
-            <div className="container mx-auto max-w-[1400px] py-4 px-4 flex items-center justify-between">
-              <SmartLogo />
-              <NotificationBell />
-            </div>
-          </header>
           {children}
         </SupabaseProvider>
       </body>
