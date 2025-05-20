@@ -77,6 +77,10 @@ export default function AdminUsersPage() {
     try {
       // Only allow admins to fetch users
       const isAdmin = user?.user_metadata?.role === 'admin' || user?.app_metadata?.role === 'admin';
+      // Debug the user object
+      console.log("Current user:", user);
+      console.log("User metadata:", user?.user_metadata);
+      console.log("App metadata:", user?.app_metadata);
       if (!isAdmin) {
         toast({
           title: "Access Denied",
@@ -87,23 +91,14 @@ export default function AdminUsersPage() {
         setLoading(false);
         return;
       }
-      // Fetch all users
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.error("Error fetching users:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load users. Please try again.",
-          variant: "destructive",
-        });
-        setUsers([]);
-      } else {
-        setUsers(data || []);
-        console.log("Successfully loaded users:", data?.length || 0);
+      // Fetch users from the admin API route
+      const response = await fetch('/api/admin/users');
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
+      const data = await response.json();
+      setUsers(data || []);
+      console.log("Successfully loaded users:", data?.length || 0);
     } catch (error) {
       console.error("Unexpected error fetching users:", error);
       toast({
