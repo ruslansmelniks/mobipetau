@@ -42,6 +42,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface User {
   id: string
@@ -69,9 +70,10 @@ export default function AdminUsersPage() {
     phone: "",
     role: "pet_owner",
     password: "",
-    sendEmail: false,
+    sendEmail: true,
   })
   const [showPassword, setShowPassword] = useState(false)
+  const [sendEmail, setSendEmail] = useState(true)
   const supabase = useSupabaseClient()
   const user = useUser();
 
@@ -111,15 +113,15 @@ export default function AdminUsersPage() {
   }, [supabase, user]);
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.first_name || !newUser.last_name || !newUser.password) {
+    if (!newUser.email || !newUser.first_name || !newUser.last_name) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
-    setLoading(true)
+    setLoading(true);
     try {
       const response = await fetch('/api/admin/create-user', {
         method: 'POST',
@@ -128,25 +130,22 @@ export default function AdminUsersPage() {
         },
         body: JSON.stringify({
           email: newUser.email,
-          password: newUser.password,
           first_name: newUser.first_name,
           last_name: newUser.last_name,
           phone: newUser.phone,
           role: newUser.role,
-          sendEmail: newUser.sendEmail,
+          send_email: sendEmail,
         }),
       });
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create user');
       }
-      const data = await response.json();
-      const actionText = data.user.isNewUser ? "created" : "updated";
       toast({
         title: "Success",
-        description: `User ${newUser.email} has been ${actionText} successfully.`,
-      })
-      setIsAddUserDialogOpen(false)
+        description: "User has been created successfully.",
+      });
+      setIsAddUserDialogOpen(false);
       setNewUser({
         email: "",
         first_name: "",
@@ -154,20 +153,21 @@ export default function AdminUsersPage() {
         phone: "",
         role: "pet_owner",
         password: "",
-        sendEmail: false,
-      })
-      fetchUsers()
+        sendEmail: true,
+      });
+      setSendEmail(true);
+      fetchUsers();
     } catch (error: any) {
-      console.error("Error adding user:", error)
+      console.error("Error adding user:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create user. Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleUpdateUser = async () => {
     if (!userToEdit) return;
@@ -365,29 +365,20 @@ export default function AdminUsersPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  placeholder="Password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  type={showPassword ? "text" : "password"}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sendEmail">Send Email</Label>
-                <Select
-                  value={newUser.sendEmail ? "true" : "false"}
-                  onValueChange={(value) => setNewUser({ ...newUser, sendEmail: value === "true" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Send Email" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">Yes</SelectItem>
-                    <SelectItem value="false">No</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="sendEmail"
+                    checked={sendEmail}
+                    onCheckedChange={(checked) => setSendEmail(!!checked)}
+                  />
+                  <Label htmlFor="sendEmail">
+                    Send password reset email to user
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500">
+                  If checked, the user will receive an email to set their password. 
+                  If unchecked, you'll need to provide them access manually.
+                </p>
               </div>
             </div>
             <DialogFooter>

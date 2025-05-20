@@ -8,119 +8,71 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, first_name, last_name, phone, role, sendEmail } = await req.json();
-    if (!email || !password || !role) {
+    const { email, first_name, last_name, phone, role, send_email } = await req.json();
+    if (!email || !first_name || !last_name || !role) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
-    // First check if the user already exists in auth
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers({
-      perPage: 100,
-      page: 1
+    // Generate a secure random password for the user
+    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8) + "A1!";
+    // Create the user in Supabase Auth
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: {
+        first_name,
+        last_name,
+        phone,
+        role
+      }
     });
-    let userId;
-    let isNewUser = true;
-    const foundUser = existingUsers?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
-    if (foundUser) {
-      userId = foundUser.id;
-      isNewUser = false;
-      // Update their metadata
-      await supabaseAdmin.auth.admin.updateUserById(userId, {
-        user_metadata: {
-          first_name,
-          last_name,
-          role
-        }
-      });
-      // Optionally reset their password if needed
-      if (password) {
-        await supabaseAdmin.auth.admin.updateUserById(userId, { password });
-      }
-    } else {
-      // Create new auth user
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          first_name,
-          last_name,
-          role
-        }
-      });
-      if (authError) {
-        console.error('Error creating auth user:', authError);
-        return NextResponse.json({ error: authError.message }, { status: 500 });
-      }
-      if (!authData.user) {
-        return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
-      }
-      userId = authData.user.id;
+    if (authError) {
+      console.error("Auth user creation error:", authError);
+      return NextResponse.json({ error: `Failed to create auth user: ${authError.message}` }, { status: 500 });
     }
-    // Now check if the user exists in our database table
-    const { data: existingDbUser } = await supabaseAdmin
+    if (!authUser.user) {
+      return NextResponse.json({ error: 'User created in auth but user object is missing' }, { status: 500 });
+    }
+    // Now insert the user into the users table (no updated_at field)
+    const { error: dbError } = await supabaseAdmin
       .from('users')
-      .select('id')
-      .eq('id', userId)
-      .single();
-    if (existingDbUser) {
-      // Update existing user in database
-      const { error: updateError } = await supabaseAdmin
-        .from('users')
-        .update({
-          first_name,
-          last_name,
-          phone,
-          role,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-      if (updateError) {
-        console.error('Error updating user in database:', updateError);
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-    } else {
-      // Insert new user into database
-      const { error: dbError } = await supabaseAdmin
-        .from('users')
-        .insert({
-          id: userId,
-          email,
-          first_name,
-          last_name,
-          phone,
-          role,
-          created_at: new Date().toISOString(),
-        });
-      if (dbError) {
-        console.error('Error adding user to database:', dbError);
-        if (isNewUser) {
-          await supabaseAdmin.auth.admin.deleteUser(userId);
-        }
-        return NextResponse.json({ error: dbError.message }, { status: 500 });
+      .insert({
+        id: authUser.user.id,
+        email,
+        first_name,
+        last_name,
+        phone: phone || null,
+        role,
+        created_at: new Date().toISOString(),
+      });
+    if (dbError) {
+      console.error("Database user creation error:", dbError);
+      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+      return NextResponse.json({ error: `Failed to create database user: ${dbError.message}` }, { status: 500 });
+    }
+    // Send password reset email if requested
+    if (send_email) {
+      const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email
+      });
+      if (resetError) {
+        console.error("Error sending password reset email:", resetError);
       }
     }
-    // Send welcome email with credentials if requested
-    if (sendEmail) {
-      try {
-        // For now, just log the email details
-        console.log(`Would send email to ${email} with password ${password}`);
-        // Uncomment when email is set up
-        // await sendWelcomeEmail({
-        //   email,
-        //   firstName: first_name,
-        //   temporaryPassword: password,
-        //   role
-        // });
-      } catch (emailError) {
-        console.error('Error sending welcome email:', emailError);
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: authUser.user.id,
+        email,
+        first_name,
+        last_name,
+        phone,
+        role
       }
-    }
-    return NextResponse.json({ 
-      success: true, 
-      user: { id: userId, email, isNewUser } 
     });
   } catch (error: any) {
-    console.error('Error in create-user API:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Unexpected error creating user:", error);
+    return NextResponse.json({ error: `Unexpected error: ${error.message}` }, { status: 500 });
   }
 } 
