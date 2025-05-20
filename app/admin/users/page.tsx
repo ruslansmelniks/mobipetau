@@ -22,7 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Search, Plus, Edit, Trash2, Mail, AlertCircle } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Mail, AlertCircle, Key } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -233,6 +233,38 @@ export default function AdminUsersPage() {
       })
     }
   }
+
+  const handleResetPassword = async (userId: string, email: string) => {
+    try {
+      const newPassword = Math.random().toString(36).slice(-8) + "A1!";
+      const response = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          password: newPassword,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to reset password');
+      }
+      toast({
+        title: "Password Reset",
+        description: `New password for ${email}: ${newPassword}`,
+        duration: 10000,
+      });
+    } catch (error: any) {
+      console.error("Error resetting password:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reset password. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const filteredUsers = users.filter(
     (user) => {
@@ -454,6 +486,14 @@ export default function AdminUsersPage() {
                             title="Edit user"
                           >
                             <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResetPassword(user.id, user.email)}
+                            title="Reset password"
+                          >
+                            <Key className="h-4 w-4" />
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
