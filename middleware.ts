@@ -30,28 +30,8 @@ export async function middleware(request: NextRequest) {
 
   // If session exists, check user role and handle role-based access
   if (session) {
-    // Extract user role from auth metadata or from user table
-    // First try to get from user_metadata
-    let userRole = session.user?.user_metadata?.role;
-    
-    // If not in user_metadata, we need to fetch from the database
-    if (!userRole) {
-      try {
-        // Fetch the user's role from the users table
-        const { data, error } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
-          
-        if (!error && data) {
-          userRole = data.role;
-          console.log('Middleware: Fetched user role from DB:', userRole);
-        }
-      } catch (e) {
-        console.error('Middleware: Error fetching user role:', e);
-      }
-    }
+    // Extract user role from auth metadata only
+    let userRole = session.user?.user_metadata?.role || session.user?.app_metadata?.role;
 
     // If on login or signup and already authenticated, redirect based on role
     if (pathname === '/login' || pathname === '/signup') {

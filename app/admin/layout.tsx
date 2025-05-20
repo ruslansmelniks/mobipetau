@@ -29,84 +29,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       try {
-        console.log("Checking admin role for user:", user.id);
-        
-        // Step 1: Check if the 'users' table exists
-        const { data: tableCheck, error: tableError } = await supabase
-          .from('users')
-          .select('id')
-          .limit(1);
-        
-        if (tableError) {
-          console.error("Database table check error:", tableError);
-          toast({
-            title: "Database Error",
-            description: "Database configuration error. Please check your setup.",
-            variant: "destructive",
-          });
-          router.push('/');
-          return;
-        }
-        
-        // Step 2: Check user's role from auth.users metadata first
-        console.log("User role from auth utility:", user.user_metadata?.role);
-        
-        if (user.user_metadata?.role === 'admin') {
-          setIsAdmin(true);
-          console.log("User confirmed as admin");
-          setLoading(false);
-          return;
-        }
-        
-        // Step 3: Double-check from users table
-        const { data, error } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (error) {
-          console.error("Error checking admin status from users table:", error);
-          
-          // If the user has admin in metadata but not in the database,
-          // create the entry automatically
-          if (user.user_metadata?.role === 'admin') {
-            const { error: insertError } = await supabase
-              .from('users')
-              .insert({
-                id: user.id,
-                email: user.email,
-                role: 'admin',
-                first_name: user.user_metadata?.first_name || '',
-                last_name: user.user_metadata?.last_name || ''
-              });
-              
-            if (insertError) {
-              console.error("Error creating admin user record:", insertError);
-              toast({
-                title: "Error",
-                description: "Failed to create admin user record.",
-                variant: "destructive",
-              });
-              router.push('/');
-              return;
-            }
-            
-            setIsAdmin(true);
-            setLoading(false);
-            return;
-          }
-          
-          router.push('/');
-          return;
-        }
-
-        if (!data || data.role !== 'admin') {
+        // Only check admin from user metadata (JWT/app_metadata)
+        const isAdmin = user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin';
+        if (!isAdmin) {
           console.log("Not an admin user");
           router.push('/');
           return;
         }
-
         setIsAdmin(true);
       } catch (error) {
         console.error("Error checking admin status:", error);

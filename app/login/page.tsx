@@ -47,54 +47,20 @@ export default function LoginPage() {
       console.log("Sign in successful, user data:", data);
       
       // Check user role from metadata
-      const userRole = data.user?.user_metadata?.role;
+      const userRole = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
       console.log("User role from metadata:", userRole);
-      
-      // If role not in metadata, check from DB
-      if (!userRole) {
-        try {
-          console.log("Checking role from database for user:", data.user?.id);
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', data.user?.id)
-            .single();
-            
-          if (userError) {
-            console.error("Error fetching user role:", userError);
-          } else {
-            console.log("User role from database:", userData?.role);
-            
-            // Redirect based on role
-            if (userData?.role === 'admin') {
-              console.log("Redirecting to admin panel");
-              router.push('/admin');
-              return;
-            } else if (userData?.role === 'vet') {
-              console.log("Redirecting to vet portal");
-              router.push('/vet');
-              return;
-            }
-          }
-        } catch (err) {
-          console.error("Error checking user role:", err);
-        }
+      if (userRole === 'admin') {
+        console.log("Redirecting to admin panel");
+        router.push('/admin');
+        return;
+      } else if (userRole === 'vet') {
+        console.log("Redirecting to vet portal");
+        router.push('/vet');
+        return;
       } else {
-        // Redirect based on role from metadata
-        if (userRole === 'admin') {
-          console.log("Redirecting to admin panel based on metadata");
-          router.push('/admin');
-          return;
-        } else if (userRole === 'vet') {
-          console.log("Redirecting to vet portal based on metadata");
-          router.push('/vet');
-          return;
-        }
+        router.push('/portal/bookings');
+        return;
       }
-
-      // Default redirect if no specific role found or is pet_owner
-      console.log("Default redirect to pet owner portal");
-      router.push('/portal/bookings');
     } catch (err: any) {
       console.error('Login error (catch block):', err);
       setError(err.message || "An unexpected error occurred during login. Please try again.");

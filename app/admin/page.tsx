@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react"
 import { Users, UserCog, Calendar, FileText } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { toast } from "@/components/ui/use-toast"
 
 export default function AdminDashboard() {
   const supabase = useSupabaseClient()
+  const user = useUser();
   const [stats, setStats] = useState({
     totalPetOwners: 0,
     totalVets: 0,
@@ -19,8 +20,24 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       setLoading(true)
-      
       try {
+        // Only allow admins to fetch user stats
+        const isAdmin = user?.user_metadata?.role === 'admin' || user?.app_metadata?.role === 'admin';
+        if (!isAdmin) {
+          toast({
+            title: "Access Denied",
+            description: "Only admins can view user stats.",
+            variant: "destructive",
+          });
+          setStats({
+            totalPetOwners: 0,
+            totalVets: 0,
+            totalAppointments: 0,
+            totalPets: 0,
+          });
+          setLoading(false);
+          return;
+        }
         // Get counts from each table instead of filtering
         const fetchPetOwners = async () => {
           try {
@@ -91,11 +108,17 @@ export default function AdminDashboard() {
           totalPets: pets
         });
       } catch (error) {
-        console.error("Error fetching dashboard stats:", error);
+        console.error("Error fetching stats:", error);
         toast({
           title: "Error",
-          description: "Failed to load dashboard statistics. Please try again.",
+          description: "Failed to load stats. Please try again.",
           variant: "destructive",
+        });
+        setStats({
+          totalPetOwners: 0,
+          totalVets: 0,
+          totalAppointments: 0,
+          totalPets: 0,
         });
       } finally {
         setLoading(false);
@@ -103,7 +126,7 @@ export default function AdminDashboard() {
     };
     
     fetchStats();
-  }, [supabase]);
+  }, [supabase, user]);
 
   if (loading) {
     return (

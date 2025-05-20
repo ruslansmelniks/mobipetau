@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import {
   Table,
   TableBody,
@@ -70,34 +70,28 @@ export default function AdminUsersPage() {
     role: "pet_owner",
   })
   const supabase = useSupabaseClient()
+  const user = useUser();
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // First check if the table exists
-      const { data: tableExists, error: tableError } = await supabase
-        .from('users')
-        .select('id')
-        .limit(1);
-        
-      if (tableError) {
-        console.error("Error accessing users table:", tableError);
+      // Only allow admins to fetch users
+      const isAdmin = user?.user_metadata?.role === 'admin' || user?.app_metadata?.role === 'admin';
+      if (!isAdmin) {
         toast({
-          title: "Database Error",
-          description: "There was an issue accessing the users table. Please check your database setup.",
+          title: "Access Denied",
+          description: "Only admins can view all users.",
           variant: "destructive",
         });
         setUsers([]);
         setLoading(false);
         return;
       }
-      
-      // If table exists, fetch all users
+      // Fetch all users
       const { data, error } = await supabase
         .from("users")
         .select("*")
         .order("created_at", { ascending: false });
-
       if (error) {
         console.error("Error fetching users:", error);
         toast({
@@ -110,7 +104,7 @@ export default function AdminUsersPage() {
         setUsers(data || []);
         console.log("Successfully loaded users:", data?.length || 0);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Unexpected error fetching users:", error);
       toast({
         title: "Error",
@@ -125,7 +119,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     fetchUsers();
-  }, [supabase]);
+  }, [supabase, user]);
 
   const handleAddUser = async () => {
     if (!newUser.email || !newUser.first_name || !newUser.last_name) {
