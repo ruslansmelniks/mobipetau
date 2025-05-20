@@ -75,35 +75,28 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // Only allow admins to fetch users
-      const isAdmin = user?.user_metadata?.role === 'admin' || user?.app_metadata?.role === 'admin';
-      // Debug the user object
-      console.log("Current user:", user);
-      console.log("User metadata:", user?.user_metadata);
-      console.log("App metadata:", user?.app_metadata);
-      if (!isAdmin) {
-        toast({
-          title: "Access Denied",
-          description: "Only admins can view all users.",
-          variant: "destructive",
-        });
-        setUsers([]);
-        setLoading(false);
-        return;
-      }
-      // Fetch users from the admin API route
-      const response = await fetch('/api/admin/users');
+      const response = await fetch('/api/admin/users', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Ensure cookies are sent
+      });
+      
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          `API error: ${response.status} - ${errorData?.error || response.statusText}`
+        );
       }
+      
       const data = await response.json();
       setUsers(data || []);
-      console.log("Successfully loaded users:", data?.length || 0);
-    } catch (error) {
-      console.error("Unexpected error fetching users:", error);
+    } catch (error: any) {
+      console.error("Error fetching users:", error);
       toast({
         title: "Error",
-        description: "Failed to load users. Please try again.",
+        description: error.message || "Failed to load users. Please try again.",
         variant: "destructive",
       });
       setUsers([]);

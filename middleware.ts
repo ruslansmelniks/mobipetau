@@ -78,6 +78,16 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/vet', request.url));
       }
     }
+
+    // If on protected routes, verify role
+    if (pathname.startsWith('/admin')) {
+      const role = session?.user?.user_metadata?.role || session?.user?.app_metadata?.role;
+      console.log('Middleware: Checking admin role:', role);
+      if (role !== 'admin') {
+        console.log('Middleware: Non-admin trying to access admin area');
+        return NextResponse.redirect(new URL('/', request.url));
+      }
+    }
   }
 
   return res;
