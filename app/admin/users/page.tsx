@@ -43,15 +43,25 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 
+interface User {
+  id: string
+  email: string
+  role: string
+  first_name: string
+  last_name: string
+  created_at: string
+  phone?: string
+}
+
 export default function AdminUsersPage() {
   const { toast } = useToast()
-  const [users, setUsers] = useState<any[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false)
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false)
-  const [userToEdit, setUserToEdit] = useState<any>(null)
+  const [userToEdit, setUserToEdit] = useState<User | null>(null)
   const [newUser, setNewUser] = useState({
     email: "",
     first_name: "",
@@ -61,32 +71,61 @@ export default function AdminUsersPage() {
   })
   const supabase = useSupabaseClient()
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
-
   const fetchUsers = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
+      // First check if the table exists
+      const { data: tableExists, error: tableError } = await supabase
+        .from('users')
+        .select('id')
+        .limit(1);
+        
+      if (tableError) {
+        console.error("Error accessing users table:", tableError);
+        toast({
+          title: "Database Error",
+          description: "There was an issue accessing the users table. Please check your database setup.",
+          variant: "destructive",
+        });
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+      
+      // If table exists, fetch all users
       const { data, error } = await supabase
         .from("users")
         .select("*")
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      
-      setUsers(data || [])
+      if (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load users. Please try again.",
+          variant: "destructive",
+        });
+        setUsers([]);
+      } else {
+        setUsers(data || []);
+        console.log("Successfully loaded users:", data?.length || 0);
+      }
     } catch (error: any) {
-      console.error("Error fetching users:", error)
+      console.error("Unexpected error fetching users:", error);
       toast({
         title: "Error",
         description: "Failed to load users. Please try again.",
         variant: "destructive",
-      })
+      });
+      setUsers([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, [supabase]);
 
   const handleAddUser = async () => {
     if (!newUser.email || !newUser.first_name || !newUser.last_name) {

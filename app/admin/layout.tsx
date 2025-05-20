@@ -10,6 +10,7 @@ import {
   Users, UserCog, LogOut, Home, Menu, X
 } from "lucide-react"
 import { getUserRole } from "@/lib/auth"
+import { toast } from "@/components/ui/use-toast"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -21,8 +22,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const checkAdminRole = async () => {
-      setLoading(true);
-      
       if (!user) {
         console.log("No user found, redirecting to login");
         router.push('/login');
@@ -30,22 +29,92 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       try {
-        // Check if user has admin role
         console.log("Checking admin role for user:", user.id);
         
-        const userRole = await getUserRole(supabase, user);
-        console.log("User role from auth utility:", userRole);
+        // Step 1: Check if the 'users' table exists
+        const { data: tableCheck, error: tableError } = await supabase
+          .from('users')
+          .select('id')
+          .limit(1);
         
-        if (userRole !== 'admin') {
-          console.log("User is not an admin, redirecting");
+        if (tableError) {
+          console.error("Database table check error:", tableError);
+          toast({
+            title: "Database Error",
+            description: "Database configuration error. Please check your setup.",
+            variant: "destructive",
+          });
+          router.push('/');
+          return;
+        }
+        
+        // Step 2: Check user's role from auth.users metadata first
+        console.log("User role from auth utility:", user.user_metadata?.role);
+        
+        if (user.user_metadata?.role === 'admin') {
+          setIsAdmin(true);
+          console.log("User confirmed as admin");
+          setLoading(false);
+          return;
+        }
+        
+        // Step 3: Double-check from users table
+        const { data, error } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error("Error checking admin status from users table:", error);
+          
+          // If the user has admin in metadata but not in the database,
+          // create the entry automatically
+          if (user.user_metadata?.role === 'admin') {
+            const { error: insertError } = await supabase
+              .from('users')
+              .insert({
+                id: user.id,
+                email: user.email,
+                role: 'admin',
+                first_name: user.user_metadata?.first_name || '',
+                last_name: user.user_metadata?.last_name || ''
+              });
+              
+            if (insertError) {
+              console.error("Error creating admin user record:", insertError);
+              toast({
+                title: "Error",
+                description: "Failed to create admin user record.",
+                variant: "destructive",
+              });
+              router.push('/');
+              return;
+            }
+            
+            setIsAdmin(true);
+            setLoading(false);
+            return;
+          }
+          
           router.push('/');
           return;
         }
 
-        console.log("User confirmed as admin");
+        if (!data || data.role !== 'admin') {
+          console.log("Not an admin user");
+          router.push('/');
+          return;
+        }
+
         setIsAdmin(true);
       } catch (error) {
-        console.error("Error in admin role check:", error);
+        console.error("Error checking admin status:", error);
+        toast({
+          title: "Error",
+          description: "Failed to verify admin status.",
+          variant: "destructive",
+        });
         router.push('/');
       } finally {
         setLoading(false);
@@ -89,7 +158,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 width={96} 
                 height={32} 
                 className="h-8 w-auto" 
-                style={{ height: 'auto' }}
+                priority
               />
               <span className="ml-2 font-semibold text-gray-800">Admin</span>
             </Link>
