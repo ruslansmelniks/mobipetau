@@ -33,6 +33,9 @@ export async function middleware(request: NextRequest) {
     // Extract user role from auth metadata only
     let userRole = session.user?.user_metadata?.role || session.user?.app_metadata?.role;
 
+    // Debug log for role
+    console.log("Middleware checking role from metadata:", userRole);
+
     // If on login or signup and already authenticated, redirect based on role
     if (pathname === '/login' || pathname === '/signup') {
       if (userRole === 'admin') {

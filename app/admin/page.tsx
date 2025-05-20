@@ -19,9 +19,9 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const fetchStats = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
-        // Only allow admins to fetch user stats
+        // Only allow admins to fetch stats
         const isAdmin = user?.user_metadata?.role === 'admin' || user?.app_metadata?.role === 'admin';
         if (!isAdmin) {
           toast({
@@ -38,75 +38,13 @@ export default function AdminDashboard() {
           setLoading(false);
           return;
         }
-        // Get counts from each table instead of filtering
-        const fetchPetOwners = async () => {
-          try {
-            const { data, error, count } = await supabase
-              .from('users')
-              .select('*', { count: 'exact', head: true })
-              .eq('role', 'pet_owner');
-            
-            return error ? 0 : (count || 0);
-          } catch (e) {
-            console.error("Error counting pet owners:", e);
-            return 0;
-          }
-        };
-        
-        const fetchVets = async () => {
-          try {
-            const { data, error, count } = await supabase
-              .from('users')
-              .select('*', { count: 'exact', head: true })
-              .eq('role', 'vet');
-            
-            return error ? 0 : (count || 0);
-          } catch (e) {
-            console.error("Error counting vets:", e);
-            return 0;
-          }
-        };
-
-        const fetchAppointments = async () => {
-          try {
-            const { data, error, count } = await supabase
-              .from('appointments')
-              .select('*', { count: 'exact', head: true });
-            
-            return error ? 0 : (count || 0);
-          } catch (e) {
-            console.error("Error counting appointments:", e);
-            return 0;
-          }
-        };
-
-        const fetchPets = async () => {
-          try {
-            const { data, error, count } = await supabase
-              .from('pets')
-              .select('*', { count: 'exact', head: true });
-            
-            return error ? 0 : (count || 0);
-          } catch (e) {
-            console.error("Error counting pets:", e);
-            return 0;
-          }
-        };
-        
-        // Run all queries in parallel
-        const [petOwners, vets, appointments, pets] = await Promise.all([
-          fetchPetOwners(),
-          fetchVets(),
-          fetchAppointments(),
-          fetchPets()
-        ]);
-        
-        setStats({
-          totalPetOwners: petOwners,
-          totalVets: vets,
-          totalAppointments: appointments,
-          totalPets: pets
-        });
+        // Create an API endpoint for stats instead of direct queries
+        const response = await fetch('/api/admin/stats');
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        setStats(data);
       } catch (error) {
         console.error("Error fetching stats:", error);
         toast({
@@ -124,9 +62,8 @@ export default function AdminDashboard() {
         setLoading(false);
       }
     };
-    
     fetchStats();
-  }, [supabase, user]);
+  }, [user]);
 
   if (loading) {
     return (
