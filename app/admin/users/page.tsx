@@ -69,7 +69,7 @@ export default function AdminUsersPage() {
     phone: "",
     role: "pet_owner",
     password: "",
-    sendEmail: true,
+    sendEmail: false,
   })
   const [showPassword, setShowPassword] = useState(false)
   const supabase = useSupabaseClient()
@@ -111,7 +111,7 @@ export default function AdminUsersPage() {
   }, [supabase, user]);
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.first_name || !newUser.last_name || (!newUser.sendEmail && !newUser.password)) {
+    if (!newUser.email || !newUser.first_name || !newUser.last_name || !newUser.password) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields.",
@@ -121,9 +121,6 @@ export default function AdminUsersPage() {
     }
     setLoading(true)
     try {
-      const password = newUser.sendEmail 
-        ? Math.random().toString(36).slice(-8) + "A1!"
-        : newUser.password;
       const response = await fetch('/api/admin/create-user', {
         method: 'POST',
         headers: {
@@ -131,7 +128,7 @@ export default function AdminUsersPage() {
         },
         body: JSON.stringify({
           email: newUser.email,
-          password,
+          password: newUser.password,
           first_name: newUser.first_name,
           last_name: newUser.last_name,
           phone: newUser.phone,
@@ -144,9 +141,10 @@ export default function AdminUsersPage() {
         throw new Error(errorData.error || 'Failed to create user');
       }
       const data = await response.json();
+      const actionText = data.user.isNewUser ? "created" : "updated";
       toast({
         title: "Success",
-        description: `User ${newUser.email} has been created successfully.`,
+        description: `User ${newUser.email} has been ${actionText} successfully.`,
       })
       setIsAddUserDialogOpen(false)
       setNewUser({
@@ -156,7 +154,7 @@ export default function AdminUsersPage() {
         phone: "",
         role: "pet_owner",
         password: "",
-        sendEmail: true,
+        sendEmail: false,
       })
       fetchUsers()
     } catch (error: any) {
