@@ -85,6 +85,17 @@ async function updateUser(userData: any) {
     return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
   }
   try {
+    // First check if user exists
+    const { data: existingUser, error: checkError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('id', id)
+      .single();
+    if (checkError || !existingUser) {
+      console.error('User not found check error:', checkError);
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    // Update auth metadata
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
       user_metadata: {
         first_name,
@@ -94,17 +105,23 @@ async function updateUser(userData: any) {
       }
     });
     if (authError) throw authError;
-    const { data: sqlData, error: sqlError } = await supabaseAdmin.rpc('admin_update_user', {
-      user_first_name: first_name || null,
-      user_id: id,
-      user_last_name: last_name || null,
-      user_phone: phone || null,
-      user_role: role
-    });
-    if (sqlError) throw sqlError;
+    // Update user in database directly instead of using RPC
+    const { data: updateData, error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({
+        first_name,
+        last_name,
+        phone,
+        role,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
     return NextResponse.json({
       success: true,
-      user: {
+      user: updateData || {
         id,
         first_name,
         last_name,
