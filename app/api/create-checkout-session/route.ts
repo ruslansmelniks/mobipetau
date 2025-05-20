@@ -66,28 +66,28 @@ export async function POST(req: NextRequest) {
     if (petName) {
       description = `Vet appointment for ${petName}`;
     }
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'aud',
-            product_data: {
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'aud',
+          product_data: {
               name: 'MobiPet Vet Appointment',
               description: description,
-            },
-            unit_amount: Math.round(amount * 100),
           },
-          quantity: 1,
+            unit_amount: Math.round(amount * 100),
         },
-      ],
-      mode: 'payment',
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
       success_url: `${req.nextUrl.origin}/book/confirmation?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.nextUrl.origin}/book/payment`,
       metadata: {
         appointmentId
       }
-    });
+  });
     return NextResponse.json({ sessionId: session.id });
   } catch (error: any) {
     console.error('Error creating checkout session:', error);
