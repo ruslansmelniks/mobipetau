@@ -13,18 +13,24 @@ import { ProviderWaitlistDialog } from "@/components/provider-waitlist-dialog"
 import { useUser } from "@supabase/auth-helpers-react"
 import { useRouter } from "next/navigation"
 import { SmartLogo } from "@/components/smart-logo"
+import { redirectBasedOnRole } from "@/lib/utils"
 
 export default function LandingPage() {
   const [isWaitlistDialogOpen, setIsWaitlistDialogOpen] = useState(false)
-  const user = useUser()
   const router = useRouter()
+  const user = useUser()
 
   useEffect(() => {
     if (user) {
-      const role = user.user_metadata?.role || '';
-      if (role === 'vet') {
-        router.push('/vet');
+      // Try to get role from user_metadata first
+      const role = user.user_metadata?.role;
+      
+      // If no role in metadata, check if we need to query the database
+      if (role) {
+        redirectBasedOnRole(role, router);
       } else {
+        // If no role in metadata, we might need to fetch from DB
+        // For now, default to pet owner portal
         router.push('/portal/bookings');
       }
     }
@@ -465,8 +471,8 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-500">Redirecting to your dashboard...</p>
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
     </div>
   )
 } 

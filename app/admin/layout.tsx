@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { 
   Users, UserCog, LogOut, Home, Menu, X
 } from "lucide-react"
+import { getUserRole } from "@/lib/auth"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -20,37 +21,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const checkAdminRole = async () => {
+      setLoading(true);
+      
       if (!user) {
-        router.push('/login')
-        return
+        console.log("No user found, redirecting to login");
+        router.push('/login');
+        return;
       }
 
       try {
         // Check if user has admin role
-        const { data, error } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-
-        if (error || !data || data.role !== 'admin') {
-          // Not an admin, redirect to home
-          console.log("Not an admin user")
-          router.push('/')
-          return
+        console.log("Checking admin role for user:", user.id);
+        
+        const userRole = await getUserRole(supabase, user);
+        console.log("User role from auth utility:", userRole);
+        
+        if (userRole !== 'admin') {
+          console.log("User is not an admin, redirecting");
+          router.push('/');
+          return;
         }
 
-        setIsAdmin(true)
+        console.log("User confirmed as admin");
+        setIsAdmin(true);
       } catch (error) {
-        console.error("Error checking admin status:", error)
-        router.push('/')
+        console.error("Error in admin role check:", error);
+        router.push('/');
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    checkAdminRole()
-  }, [user, router, supabase])
+    checkAdminRole();
+  }, [user, router, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -80,7 +83,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between h-16 px-4 border-b">
             <Link href="/admin" className="flex items-center">
-              <Image src="/logo.png" alt="MobiPet Admin" width={96} height={32} className="h-8 w-auto" />
+              <Image 
+                src="/logo.png" 
+                alt="MobiPet Admin" 
+                width={96} 
+                height={32} 
+                className="h-8 w-auto" 
+                style={{ height: 'auto' }}
+              />
               <span className="ml-2 font-semibold text-gray-800">Admin</span>
             </Link>
             <button

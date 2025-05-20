@@ -8,7 +8,9 @@ export function cn(...inputs: ClassValue[]) {
 export function redirectBasedOnRole(role: string | undefined, router: any) {
   console.log("redirectBasedOnRole called with role:", role);
   
-  if (role === 'vet') {
+  if (role === 'admin') {
+    router.push('/admin');
+  } else if (role === 'vet') {
     router.push('/vet');
   } else if (role === 'pet_owner') {
     console.log("Redirecting to pet owner portal");
