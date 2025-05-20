@@ -123,23 +123,26 @@ export default function AdminUsersPage() {
     }
     setLoading(true);
     try {
-      const response = await fetch('/api/admin/create-user', {
+      const response = await fetch('/api/admin/user-management', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: newUser.email,
-          first_name: newUser.first_name,
-          last_name: newUser.last_name,
-          phone: newUser.phone,
-          role: newUser.role,
-          send_email: sendEmail,
+          action: 'create',
+          userData: {
+            email: newUser.email,
+            first_name: newUser.first_name,
+            last_name: newUser.last_name,
+            phone: newUser.phone,
+            role: newUser.role,
+            send_email: sendEmail,
+          }
         }),
       });
+      const result = await response.json();
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create user');
+        throw new Error(result.error || 'Failed to create user');
       }
       toast({
         title: "Success",
@@ -171,68 +174,79 @@ export default function AdminUsersPage() {
 
   const handleUpdateUser = async () => {
     if (!userToEdit) return;
-    
+    setLoading(true);
     try {
-      // Update user in public.users table
-      const { error } = await supabase
-        .from("users")
-        .update({
-          first_name: userToEdit.first_name,
-          last_name: userToEdit.last_name,
-          phone: userToEdit.phone,
-          role: userToEdit.role,
-        })
-        .eq("id", userToEdit.id)
-
-      if (error) {
-        throw error
+      const response = await fetch('/api/admin/user-management', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update',
+          userData: {
+            id: userToEdit.id,
+            first_name: userToEdit.first_name,
+            last_name: userToEdit.last_name,
+            phone: userToEdit.phone,
+            role: userToEdit.role,
+          }
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update user');
       }
-
       toast({
         title: "Success",
-        description: "User has been updated.",
-      })
-      
-      setIsEditUserDialogOpen(false)
-      fetchUsers()
+        description: "User has been updated successfully.",
+      });
+      setIsEditUserDialogOpen(false);
+      fetchUsers();
     } catch (error: any) {
-      console.error("Error updating user:", error)
+      console.error("Error updating user:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to update user. Please try again.",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   const handleDeleteUser = async (userId: string) => {
+    setLoading(true);
     try {
-      // First delete from our users table
-      const { error } = await supabase
-        .from("users")
-        .delete()
-        .eq("id", userId);
-      
-      if (error) throw error;
-
-      // Note: In production, you would need a server-side function 
-      // with admin privileges to delete the auth user
-
+      const response = await fetch('/api/admin/user-management', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          userData: { id: userId }
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete user');
+      }
       toast({
         title: "Success",
-        description: "User has been deleted from the users table.",
-      })
-      
-      fetchUsers()
+        description: "User has been deleted successfully.",
+      });
+      fetchUsers();
     } catch (error: any) {
-      console.error("Error deleting user:", error)
+      console.error("Error deleting user:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to delete user. Please try again.",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   const handleResetPassword = async (userId: string, email: string) => {
     try {
