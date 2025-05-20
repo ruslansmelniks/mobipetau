@@ -68,7 +68,10 @@ export default function AdminUsersPage() {
     last_name: "",
     phone: "",
     role: "pet_owner",
+    password: "",
+    sendEmail: true,
   })
+  const [showPassword, setShowPassword] = useState(false)
   const supabase = useSupabaseClient()
   const user = useUser();
 
@@ -108,7 +111,7 @@ export default function AdminUsersPage() {
   }, [supabase, user]);
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.first_name || !newUser.last_name) {
+    if (!newUser.email || !newUser.first_name || !newUser.last_name || (!newUser.sendEmail && !newUser.password)) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields.",
@@ -116,59 +119,35 @@ export default function AdminUsersPage() {
       })
       return
     }
-
     setLoading(true)
-    
     try {
-      // Note: In the actual implementation, we should be using admin functions
-      // or server-side API routes for these operations for security.
-      // For demonstration purposes, we're doing it client-side.
-      
-      // 1. Generate a temporary password
-      const tempPassword = Math.random().toString(36).slice(-8) + "A1!"; 
-      
-      // 2. Create user with temporary password
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: tempPassword,
-        options: {
-          data: {
-            first_name: newUser.first_name,
-            last_name: newUser.last_name,
-          }
-        }
-      })
-
-      if (authError) {
-        throw authError
+      const password = newUser.sendEmail 
+        ? Math.random().toString(36).slice(-8) + "A1!"
+        : newUser.password;
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: newUser.email,
+          password,
+          first_name: newUser.first_name,
+          last_name: newUser.last_name,
+          phone: newUser.phone,
+          role: newUser.role,
+          sendEmail: newUser.sendEmail,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create user');
       }
-
-      // 3. Add user to public.users table with appropriate role
-      if (authData?.user) {
-        const { error: userError } = await supabase
-          .from("users")
-          .insert({
-            id: authData.user.id,
-            email: newUser.email,
-            first_name: newUser.first_name,
-            last_name: newUser.last_name,
-            phone: newUser.phone,
-            role: newUser.role,
-          })
-
-        if (userError) {
-          throw userError
-        }
-      }
-
-      // 4. Send password reset email (in a production app)
-      // This would need server-side code or admin functions
-
+      const data = await response.json();
       toast({
         title: "Success",
-        description: "User has been created successfully.",
+        description: `User ${newUser.email} has been created successfully.`,
       })
-      
       setIsAddUserDialogOpen(false)
       setNewUser({
         email: "",
@@ -176,6 +155,8 @@ export default function AdminUsersPage() {
         last_name: "",
         phone: "",
         role: "pet_owner",
+        password: "",
+        sendEmail: true,
       })
       fetchUsers()
     } catch (error: any) {
@@ -350,6 +331,31 @@ export default function AdminUsersPage() {
                     <SelectItem value="pet_owner">Pet Owner</SelectItem>
                     <SelectItem value="vet">Veterinarian</SelectItem>
                     <SelectItem value="admin">Administrator</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  placeholder="Password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  type={showPassword ? "text" : "password"}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sendEmail">Send Email</Label>
+                <Select
+                  value={newUser.sendEmail ? "true" : "false"}
+                  onValueChange={(value) => setNewUser({ ...newUser, sendEmail: value === "true" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Send Email" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
