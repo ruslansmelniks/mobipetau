@@ -74,24 +74,23 @@ export default function AdminUsersPage() {
 
   const fetchUsers = async () => {
     setLoading(true);
+    setUsers([]);
+    
     try {
-      const response = await fetch('/api/admin/users', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Ensure cookies are sent
-      });
+      // Directly call the API - middleware ensures this is only accessible by admins
+      const response = await fetch('/api/admin/users');
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(
-          `API error: ${response.status} - ${errorData?.error || response.statusText}`
+          `API error: ${response.status} - ${errorData.error || response.statusText}`
         );
       }
       
       const data = await response.json();
+      console.log('Fetched users count:', data?.length || 0);
       setUsers(data || []);
+      
     } catch (error: any) {
       console.error("Error fetching users:", error);
       toast({
@@ -99,7 +98,6 @@ export default function AdminUsersPage() {
         description: error.message || "Failed to load users. Please try again.",
         variant: "destructive",
       });
-      setUsers([]);
     } finally {
       setLoading(false);
     }
