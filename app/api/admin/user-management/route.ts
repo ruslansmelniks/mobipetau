@@ -9,90 +9,137 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 async function createUser(userData: any, req: NextRequest) {
   try {
     logger.info('Creating new user', { email: userData.email, role: userData.role }, req);
-    // Fetch all users and filter by email manually (since 'filter' is not a valid option)
-    const { data: existingUsers, error: userCheckError } = await supabaseAdmin.auth.admin.listUsers();
-    if (userCheckError) {
-      logger.error('Error checking for existing users', { error: userCheckError.message }, req);
-      return NextResponse.json({ error: userCheckError.message }, { status: 500 });
+
+    // 1. Check if user exists in Supabase Auth
+    const { data: existingAuthUsers, error: authListError } = await supabaseAdmin.auth.admin.listUsers();
+    if (authListError) {
+      logger.error('Error checking for existing users in auth', { error: authListError.message }, req);
+      return NextResponse.json({ error: authListError.message }, { status: 500 });
     }
-    const emailExists = existingUsers && existingUsers.users && existingUsers.users.some(user => user.email?.toLowerCase() === userData.email.toLowerCase());
-    if (emailExists) {
-      logger.warn('User with this email already exists', { email: userData.email }, req);
+    const authEmailExists = existingAuthUsers && existingAuthUsers.users && existingAuthUsers.users.some(user => user.email?.toLowerCase() === userData.email.toLowerCase());
+    if (authEmailExists) {
+      logger.warn('User with this email already exists in auth', { email: userData.email }, req);
       return NextResponse.json(
         { error: 'A user with this email already exists', code: 'user_exists' },
         { status: 409 }
       );
     }
-    // Proceed with user creation if email doesn't exist
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+
+    // 2. Check if user exists in the users table
+    const { data: existingDbUser, error: dbCheckError } = await supabaseAdmin
+      .from('users')
+      .select('id, email')
+      .eq('email', userData.email)
+      .maybeSingle();
+    if (dbCheckError) {
+      logger.error('Error checking existing user in database', { error: dbCheckError.message, email: userData.email }, req);
+    }
+    if (existingDbUser) {
+      logger.warn('User exists in database but not in auth', { email: userData.email, id: existingDbUser.id }, req);
+      return NextResponse.json(
+        { error: 'A user with this email already exists in the system', code: 'user_exists_db' },
+        { status: 409 }
+      );
+    }
+
+    // 3. Create the user in Supabase Auth
+    const tempPassword = userData.password || (Math.random().toString(36).slice(-8) + "A1!");
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: userData.email,
-      password: userData.password || Math.random().toString(36).slice(-8) + "A1!",
+      password: tempPassword,
       email_confirm: true,
       user_metadata: {
-        role: userData.role,
         first_name: userData.first_name,
         last_name: userData.last_name,
-        phone: userData.phone
-      },
-    });
-    if (error) {
-      if (error.message && error.message.includes('already exists')) {
-        logger.warn('User with this email already exists', { email: userData.email }, req);
-        return NextResponse.json(
-          { error: 'A user with this email already exists', code: 'user_exists' },
-          { status: 409 }
-        );
+        phone: userData.phone,
+        role: userData.role
       }
-      logger.error('Failed to create user', { error: error.message, email: userData.email }, req);
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    });
+    if (authError) {
+      logger.error('Failed to create auth user', { error: authError.message, email: userData.email }, req);
+      return NextResponse.json({ error: authError.message }, { status: 400 });
     }
-    if (!data.user) {
-      logger.error('User created but no user object returned', { email: userData.email }, req);
-      return NextResponse.json({ error: 'User created but no user object returned' }, { status: 500 });
+    if (!authUser.user) {
+      logger.error('Auth user created but user object is missing', { email: userData.email }, req);
+      return NextResponse.json({ error: 'Failed to create user account' }, { status: 500 });
     }
-    // Insert user in database
+    logger.debug('Auth user created successfully, attempting database insert', {
+      authUserId: authUser.user.id,
+      email: userData.email
+    }, req);
+
+    // 4. Insert into users table using upsert to avoid PK conflict
     const { error: dbError } = await supabaseAdmin
       .from('users')
-      .insert({
-        id: data.user.id,
+      .upsert({
+        id: authUser.user.id,
         email: userData.email,
         first_name: userData.first_name,
         last_name: userData.last_name,
         phone: userData.phone || null,
         role: userData.role,
         created_at: new Date().toISOString(),
+      }, {
+        onConflict: 'id',
+        ignoreDuplicates: false
       });
     if (dbError) {
-      logger.error('Failed to create user in database', { error: dbError.message, email: userData.email }, req);
-      await supabaseAdmin.auth.admin.deleteUser(data.user.id).catch(e => {
-        logger.error('Failed to clean up auth user after database error', { error: e.message, userId: data.user.id }, req);
-      });
-      return NextResponse.json({ error: dbError.message }, { status: 400 });
-    }
-    if (userData.send_email) {
-      const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
+      logger.error('Database insert failed with detailed info', {
+        error: dbError.message,
+        details: dbError.details,
+        hint: dbError.hint,
+        code: dbError.code,
+        authUserId: authUser.user.id,
         email: userData.email
-      });
-      if (resetError) {
-        logger.error('Error sending password reset email', { error: resetError.message, email: userData.email }, req);
+      }, req);
+      // Clean up auth user
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+      } catch (deleteError) {
+        logger.error('Failed to clean up auth user after database error', {
+          error: String(deleteError),
+          userId: authUser.user.id
+        }, req);
+      }
+      return NextResponse.json({ error: `Failed to create user in database: ${dbError.message}` }, { status: 400 });
+    }
+
+    // 5. Handle email sending if requested
+    if (userData.send_email) {
+      try {
+        const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email: userData.email
+        });
+        if (resetError) {
+          logger.error('Error sending password reset email', {
+            error: resetError.message,
+            email: userData.email
+          }, req);
+        }
+      } catch (emailError) {
+        logger.error('Failed to send welcome email', {
+          error: String(emailError),
+          email: userData.email
+        }, req);
       }
     }
-    logger.info('User created successfully', { userId: data.user.id, email: userData.email }, req);
+
+    logger.info('User created successfully', { userId: authUser.user.id, email: userData.email }, req);
     return NextResponse.json({
       success: true,
       user: {
-        id: data.user.id,
+        id: authUser.user.id,
         email: userData.email,
         first_name: userData.first_name,
         last_name: userData.last_name,
-        role: userData.role,
-        phone: userData.phone
+        phone: userData.phone,
+        role: userData.role
       }
     });
   } catch (error: any) {
     logger.error('Unexpected error in createUser', { error: error.message }, req);
-    return NextResponse.json({ error: error.message || 'Unknown error occurred' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
