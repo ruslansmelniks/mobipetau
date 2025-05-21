@@ -21,10 +21,7 @@ async function createUser(userData: any, req: NextRequest) {
     );
     if (emailExists) {
       logger.error('User with this email already exists', { email: userData.email }, req);
-      return NextResponse.json({ 
-        error: 'A user with this email address has already been registered',
-        code: 'email_exists'
-      }, { status: 400 });
+      return NextResponse.json({ code: 'email_exists', error: 'User with this email already exists' }, { status: 400 });
     }
     // Prepare user data with a password if provided
     const createUserPayload: any = {
