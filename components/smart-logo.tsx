@@ -26,6 +26,7 @@ export function SmartLogo({ className }: { className?: string }) {
         width={96} 
         height={32} 
         className="h-[32px] w-auto" 
+        style={{ height: 'auto' }}
       />
     </Link>
   );

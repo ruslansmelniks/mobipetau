@@ -87,6 +87,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 width={96} 
                 height={32} 
                 className="h-8 w-auto" 
+                style={{ height: 'auto' }}
                 priority
               />
               <span className="ml-2 font-semibold text-gray-800">Admin</span>

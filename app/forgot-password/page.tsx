@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
       <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
         <div className="flex items-center">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
           </Link>
         </div>
         <nav className="hidden md:flex items-center space-x-8">

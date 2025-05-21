@@ -305,7 +305,7 @@ export default function PaymentPage() {
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <Link href="/" className="flex justify-center md:justify-start">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
           </Link>
         </div>
       </header>
