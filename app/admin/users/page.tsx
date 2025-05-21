@@ -290,14 +290,28 @@ export default function AdminUsersPage() {
         }),
       });
       const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to delete user');
+      // Even if we get a non-200 response, check if we partially succeeded
+      if (response.ok || (result.details && (result.details.authUserDeleted || result.details.dbUserDeleted))) {
+        // Consider it a success if we deleted from at least one system
+        toast({
+          title: "Success",
+          description: result.message || "User has been deleted successfully.",
+        });
+        fetchUsers(); // Refresh the user list
+        return;
       }
-      toast({
-        title: "Success",
-        description: "User has been deleted successfully.",
-      });
-      fetchUsers();
+      // Handle specific error codes
+      if (response.status === 404 || result.code === 'user_not_found') {
+        toast({
+          title: "User Not Found",
+          description: "This user may have already been deleted. The user list will be refreshed.",
+          variant: "default",
+        });
+        fetchUsers(); // Refresh to be sure
+        return;
+      }
+      // For other errors
+      throw new Error(result.error || 'Failed to delete user');
     } catch (error: any) {
       console.error("Error deleting user:", error);
       toast({

@@ -205,19 +205,81 @@ async function updateUser(userData: any, req: NextRequest) {
 async function deleteUser(userId: string, req: NextRequest) {
   try {
     logger.info('Deleting user', { userId }, req);
-    
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    // First, check if the user exists in both places
+    let authUserExists = true;
+    let dbUserExists = true;
+    let authDeleteError = null;
 
-    if (error) {
-      logger.error('Failed to delete user', { error: error.message, userId }, req);
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    // Check if user exists in Auth
+    const { data: authUser, error: authCheckError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (authCheckError || !authUser.user) {
+      logger.warn('User not found in Auth system', { userId, error: authCheckError?.message }, req);
+      authUserExists = false;
     }
 
-    logger.info('User deleted successfully', { userId }, req);
-    return NextResponse.json({ success: true });
+    // Check if user exists in the database
+    const { data: dbUser, error: dbCheckError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+    if (dbCheckError) {
+      logger.error('Error checking user in database', { error: dbCheckError.message, userId }, req);
+    }
+    if (!dbUser) {
+      logger.warn('User not found in database', { userId }, req);
+      dbUserExists = false;
+    }
+
+    // If user doesn't exist in both places, return error
+    if (!authUserExists && !dbUserExists) {
+      logger.error('User not found in both Auth and database', { userId }, req);
+      return NextResponse.json({ error: 'User not found in the system', code: 'user_not_found' }, { status: 404 });
+    }
+
+    // Delete from Auth if exists
+    if (authUserExists) {
+      const { error: authDeleteErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      if (authDeleteErr) {
+        logger.error('Failed to delete user from Auth', { error: authDeleteErr.message, userId }, req);
+        authDeleteError = authDeleteErr;
+        // Continue with database deletion even if Auth deletion fails
+        logger.warn('Continuing with database deletion despite Auth deletion failure', { userId }, req);
+      } else {
+        logger.info('User deleted from Auth successfully', { userId }, req);
+      }
+    }
+
+    // Delete from database if exists
+    let dbDeleteError = null;
+    if (dbUserExists) {
+      const { error: dbDeleteErr } = await supabaseAdmin
+        .from('users')
+        .delete()
+        .eq('id', userId);
+      if (dbDeleteErr) {
+        logger.error('Failed to delete user from database', { error: dbDeleteErr.message, userId }, req);
+        dbDeleteError = dbDeleteErr;
+        return NextResponse.json({
+          error: `Failed to delete user from database: ${dbDeleteErr.message}`,
+          authDeleted: authUserExists && !authDeleteError,
+        }, { status: 500 });
+      }
+      logger.info('User deleted from database successfully', { userId }, req);
+    }
+
+    // Success - deleted from at least one place
+    return NextResponse.json({
+      success: true,
+      message: 'User deleted successfully',
+      details: {
+        authUserDeleted: authUserExists && !authDeleteError,
+        dbUserDeleted: dbUserExists && !dbDeleteError
+      }
+    });
   } catch (error: any) {
-    logger.error('Unexpected error in deleteUser', { error: error.message }, req);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    logger.error('Unexpected error in deleteUser', { error: error.message, userId }, req);
+    return NextResponse.json({ error: error.message || 'Unknown error occurred' }, { status: 500 });
   }
 }
 
