@@ -38,56 +38,53 @@ async function updateUser(userData: any, req: NextRequest) {
   try {
     logger.info('Updating user', { userId: userData.id }, req);
 
-    // Pre-check: verify user exists in Auth
+    // Check if user exists in Auth
     const { data: authUser, error: fetchError } = await supabaseAdmin.auth.admin.getUserById(userData.id);
     if (fetchError || !authUser?.user) {
       logger.error('User not found in Auth', { userId: userData.id, fetchError }, req);
       return NextResponse.json({ error: 'User not found in authentication system.' }, { status: 404 });
     }
-    // Update auth metadata
-    const { data: updatedUser, error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+    // Update auth user metadata
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.updateUserById(
       userData.id,
       {
         user_metadata: {
+          role: userData.role,
           first_name: userData.first_name,
           last_name: userData.last_name,
           phone: userData.phone,
-          role: userData.role
-        }
+        },
       }
     );
     if (authError) {
-      logger.error('Failed to update user auth', { error: authError.message, userId: userData.id }, req);
+      logger.error('Failed to update user auth metadata', { error: authError.message, userId: userData.id }, req);
       return NextResponse.json({ error: authError.message }, { status: 400 });
     }
-    // Update database record
-    const { data: dbUser, error: dbError } = await supabaseAdmin
-      .from('users')
-      .update({
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        phone: userData.phone,
-        role: userData.role,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userData.id)
-      .select('*')
-      .single();
+    // Update database record without using updated_at
+    const updateData = {
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      role: userData.role,
+      phone: userData.phone || null,
+    };
+    const { error: dbError } = await supabaseAdmin
+      .from("users")
+      .update(updateData)
+      .eq("id", userData.id);
     if (dbError) {
       logger.error('Failed to update user in database', { error: dbError.message, userId: userData.id }, req);
       return NextResponse.json({ error: dbError.message }, { status: 400 });
     }
     logger.info('User updated successfully', { userId: userData.id }, req);
-    // Return the full updated user object
-    return NextResponse.json({
+    return NextResponse.json({ 
       success: true,
-      user: dbUser || {
+      user: {
         id: userData.id,
+        email: authUser.user.email,
         first_name: userData.first_name,
         last_name: userData.last_name,
-        phone: userData.phone,
         role: userData.role,
-        email: authUser.user.email
+        phone: userData.phone,
       }
     });
   } catch (error: any) {
