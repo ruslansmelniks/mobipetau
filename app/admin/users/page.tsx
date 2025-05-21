@@ -378,7 +378,13 @@ export default function AdminUsersPage() {
                 Create a new user account. They will receive an email to set their password.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await handleAddUser();
+              }}
+              className="space-y-4 py-4"
+            >
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -485,15 +491,15 @@ export default function AdminUsersPage() {
                   If unchecked, you'll need to provide them access manually.
                 </p>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddUserDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddUser} disabled={loading}>
-                {loading ? "Adding..." : "Add User"}
-              </Button>
-            </DialogFooter>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsAddUserDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={loading}>
+                  {loading ? "Adding..." : "Add User"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
