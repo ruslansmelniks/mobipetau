@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { SmartLogo } from "@/components/smart-logo"
+import { logger } from "@/lib/logger"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -31,6 +32,8 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       
+      logger.info('Attempting login', { email });
+      
       // Supabase signin
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -38,31 +41,43 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        console.error("Supabase SignIn Error:", signInError);
+        logger.error('Login failed', { 
+          email,
+          error: signInError.message 
+        });
         setError(signInError.message || "Invalid email or password.");
         setIsLoading(false);
         return;
       }
 
-      console.log("Sign in successful, user data:", data);
+      logger.info('Login successful', { 
+        userId: data.user?.id,
+        email: data.user?.email,
+        role: data.user?.user_metadata?.role || data.user?.app_metadata?.role
+      });
       
       // Check user role from metadata
       const userRole = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
-      console.log("User role from metadata:", userRole);
+      
+      let redirectPath = '/portal/bookings';
       if (userRole === 'admin') {
-        console.log("Redirecting to admin panel");
-        router.push('/admin');
-        return;
+        redirectPath = '/admin';
       } else if (userRole === 'vet') {
-        console.log("Redirecting to vet portal");
-        router.push('/vet');
-        return;
-      } else {
-        router.push('/portal/bookings');
-        return;
+        redirectPath = '/vet';
       }
+
+      logger.info('Redirecting user after login', {
+        userId: data.user?.id,
+        role: userRole,
+        redirectPath
+      });
+
+      router.push(redirectPath);
     } catch (err: any) {
-      console.error('Login error (catch block):', err);
+      logger.error('Unexpected login error', {
+        email,
+        error: err.message
+      });
       setError(err.message || "An unexpected error occurred during login. Please try again.");
     } finally {
       setIsLoading(false);
@@ -70,88 +85,85 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
-        <div className="flex items-center">
-          <SmartLogo />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <SmartLogo className="mx-auto" />
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
+            Sign in to your account
+          </h2>
         </div>
-      </header>
-
-      <main className="flex-1 flex items-center justify-center px-4">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold">Welcome back</h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Don't have an account?{" "}
-              <Link href="/signup" className="text-teal-600 hover:text-teal-500">
-                Sign up
-              </Link>
-            </p>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <Label htmlFor="email" className="sr-only">
+                Email address
+              </Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
+              />
+            </div>
+            <div className="relative">
+              <Label htmlFor="password" className="sr-only">
+                Password
+              </Label>
+              <Input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-5 w-5 text-gray-400" />
+                ) : (
+                  <Eye className="h-5 w-5 text-gray-400" />
+                )}
+              </button>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full"
-                  autoComplete="email"
-                />
-              </div>
+          {error && (
+            <div className="text-red-500 text-sm text-center">{error}</div>
+          )}
 
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="w-full"
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {error && (
-              <div className="text-sm text-red-600 text-center">{error}</div>
-            )}
-
+          <div>
             <Button
               type="submit"
-              className="w-full bg-[#4e968f] hover:bg-[#43847e]"
               disabled={isLoading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
+          </div>
 
-            <div className="text-center">
-              <Link
-                href="/forgot-password"
-                className="text-sm text-teal-600 hover:text-teal-500"
-              >
-                Forgot your password?
-              </Link>
-            </div>
-          </form>
-        </div>
-      </main>
+          <div className="text-sm text-center">
+            <Link
+              href="/signup"
+              className="font-medium text-teal-600 hover:text-teal-500"
+            >
+              Don't have an account? Sign up
+            </Link>
+          </div>
+        </form>
+      </div>
     </div>
-  )
+  );
 }

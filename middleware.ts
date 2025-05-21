@@ -1,5 +1,6 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse, type NextRequest } from 'next/server';
+import { logger } from '@/lib/logger';
 
 export async function middleware(request: NextRequest) {
   const res = NextResponse.next();
@@ -10,21 +11,26 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Log for debugging
-  console.log(
-    `Middleware: Path: ${pathname}, Session: ${session ? 'Exists' : 'None'}, Error: ${error ? error.message : 'None'}`
-  );
+  logger.debug('Middleware processing request', {
+    path: pathname,
+    hasSession: !!session,
+    error: error ? error.message : null
+  }, request);
 
   if (error) {
-    console.error('Middleware - Supabase getSession error:', error);
+    logger.error('Middleware - Supabase getSession error', { error: error.message }, request);
     // Allow request to proceed or handle error appropriately, for now, proceed
     return res;
   }
 
   // If no session and trying to access protected routes, redirect to login
   if (!session && (pathname.startsWith('/portal') || pathname.startsWith('/vet') || pathname.startsWith('/book') || pathname.startsWith('/admin'))) {
-    console.log('Middleware: No session, redirecting to /login from protected route:', pathname);
+    logger.info('No session, redirecting to login', { 
+      path: pathname,
+      redirectTo: '/login'
+    }, request);
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirectedFrom', pathname); // Optional: pass redirect info
+    loginUrl.searchParams.set('redirectedFrom', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -33,26 +39,38 @@ export async function middleware(request: NextRequest) {
     // Extract user role from auth metadata only
     let userRole = session.user?.user_metadata?.role || session.user?.app_metadata?.role;
 
-    // Debug log for role
-    console.log("Middleware checking role from metadata:", userRole);
+    logger.debug('Middleware checking role', { 
+      userId: session.user.id,
+      role: userRole,
+      path: pathname
+    }, request);
 
     // If on login or signup and already authenticated, redirect based on role
     if (pathname === '/login' || pathname === '/signup') {
+      let redirectPath = '/portal/bookings';
       if (userRole === 'admin') {
-        console.log('Middleware: Admin user on auth page, redirecting to /admin');
-        return NextResponse.redirect(new URL('/admin', request.url));
+        redirectPath = '/admin';
       } else if (userRole === 'vet') {
-        console.log('Middleware: Vet user on auth page, redirecting to /vet');
-        return NextResponse.redirect(new URL('/vet', request.url));
-      } else {
-        console.log('Middleware: Pet owner on auth page, redirecting to /portal/bookings');
-        return NextResponse.redirect(new URL('/portal/bookings', request.url));
+        redirectPath = '/vet';
       }
+
+      logger.info('Authenticated user on auth page, redirecting', {
+        userId: session.user.id,
+        role: userRole,
+        redirectPath
+      }, request);
+
+      return NextResponse.redirect(new URL(redirectPath, request.url));
     }
 
     // Enforce role-based access control
     if (pathname.startsWith('/admin') && userRole !== 'admin') {
-      console.log('Middleware: Non-admin user trying to access /admin, redirecting');
+      logger.warn('Non-admin user attempting to access admin area', {
+        userId: session.user.id,
+        role: userRole,
+        path: pathname
+      }, request);
+
       if (userRole === 'vet') {
         return NextResponse.redirect(new URL('/vet', request.url));
       } else {
@@ -61,7 +79,12 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname.startsWith('/vet') && userRole !== 'vet') {
-      console.log('Middleware: Non-vet user trying to access /vet, redirecting');
+      logger.warn('Non-vet user attempting to access vet area', {
+        userId: session.user.id,
+        role: userRole,
+        path: pathname
+      }, request);
+
       if (userRole === 'admin') {
         return NextResponse.redirect(new URL('/admin', request.url));
       } else {
@@ -71,21 +94,16 @@ export async function middleware(request: NextRequest) {
     
     // Optional: Redirect pet owners away from other portals
     if (pathname.startsWith('/portal') && (userRole === 'admin' || userRole === 'vet')) {
-      console.log('Middleware: Admin/Vet trying to access pet owner portal, redirecting');
+      logger.info('Admin/Vet accessing pet owner portal, redirecting', {
+        userId: session.user.id,
+        role: userRole,
+        path: pathname
+      }, request);
+
       if (userRole === 'admin') {
         return NextResponse.redirect(new URL('/admin', request.url));
       } else {
         return NextResponse.redirect(new URL('/vet', request.url));
-      }
-    }
-
-    // If on protected routes, verify role
-    if (pathname.startsWith('/admin')) {
-      const role = session?.user?.user_metadata?.role || session?.user?.app_metadata?.role;
-      console.log('Middleware: Checking admin role:', role);
-      if (role !== 'admin') {
-        console.log('Middleware: Non-admin trying to access admin area');
-        return NextResponse.redirect(new URL('/', request.url));
       }
     }
   }
