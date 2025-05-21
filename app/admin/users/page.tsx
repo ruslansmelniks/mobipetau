@@ -22,7 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Search, Plus, Edit, Trash2, Mail, AlertCircle, Key } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Mail, AlertCircle, Key, Eye, EyeOff } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -117,6 +117,19 @@ export default function AdminUsersPage() {
     fetchUsers();
   }, [supabase, user]);
 
+  const generateRandomPassword = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    let password = "";
+    password += chars.charAt(Math.floor(Math.random() * 26)); // Uppercase
+    password += chars.charAt(26 + Math.floor(Math.random() * 26)); // Lowercase
+    password += chars.charAt(52 + Math.floor(Math.random() * 10)); // Number
+    password += chars.charAt(62 + Math.floor(Math.random() * 8)); // Special
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password.split('').sort(() => 0.5 - Math.random()).join('');
+  };
+
   const handleAddUser = async () => {
     if (!newUser.email || !newUser.first_name || !newUser.last_name) {
       toast({
@@ -128,6 +141,7 @@ export default function AdminUsersPage() {
     }
     setLoading(true);
     try {
+      const userPassword = newUser.password || generateRandomPassword();
       const response = await fetch('/api/admin/user-management', {
         method: 'POST',
         headers: {
@@ -141,18 +155,42 @@ export default function AdminUsersPage() {
             last_name: newUser.last_name,
             phone: newUser.phone,
             role: newUser.role,
+            password: userPassword,
             send_email: sendEmail,
           }
         }),
       });
       const result = await response.json();
       if (!response.ok) {
+        if (result.code === 'email_exists') {
+          toast({
+            title: "Email Already Exists",
+            description: "A user with this email address is already registered. Please use a different email.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
         throw new Error(result.error || 'Failed to create user');
       }
-      toast({
-        title: "Success",
-        description: "User has been created successfully.",
-      });
+      if (!sendEmail) {
+        toast({
+          title: "User Created Successfully",
+          description: (
+            <div>
+              <p>Password for {newUser.email}:</p>
+              <p className="font-mono bg-gray-100 p-2 mt-1 rounded border">{userPassword}</p>
+              <p className="text-xs mt-1">Make sure to copy this password now!</p>
+            </div>
+          ),
+          duration: 10000,
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: "User has been created and password reset email has been sent.",
+        });
+      }
       setIsAddUserDialogOpen(false);
       setNewUser({
         email: "",
@@ -378,6 +416,42 @@ export default function AdminUsersPage() {
                   value={newUser.phone}
                   onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
                 />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="password">Password</Label>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      const randomPassword = generateRandomPassword();
+                      setNewUser({ ...newUser, password: randomPassword });
+                    }}
+                  >
+                    Generate Random
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Leave empty to auto-generate"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {newUser.password ? "Password will be set to the value above." : "If left empty, a secure random password will be generated."}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
