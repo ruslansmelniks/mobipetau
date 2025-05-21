@@ -74,6 +74,8 @@ export default function AdminUsersPage() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [sendEmail, setSendEmail] = useState(true)
+  const [formError, setFormError] = useState('')
+  const [emailError, setEmailError] = useState('')
   const supabase = useSupabaseClient()
   const user = useUser();
 
@@ -130,6 +132,21 @@ export default function AdminUsersPage() {
     return password.split('').sort(() => 0.5 - Math.random()).join('');
   };
 
+  const resetForm = () => {
+    setNewUser({
+      email: "",
+      first_name: "",
+      last_name: "",
+      phone: "",
+      role: "pet_owner",
+      password: "",
+      sendEmail: true,
+    });
+    setSendEmail(true);
+    setFormError('');
+    setEmailError('');
+  };
+
   const handleAddUser = async () => {
     if (!newUser.email || !newUser.first_name || !newUser.last_name) {
       toast({
@@ -139,6 +156,8 @@ export default function AdminUsersPage() {
       });
       return;
     }
+    setFormError('');
+    setEmailError('');
     setLoading(true);
     try {
       const userPassword = newUser.password || generateRandomPassword();
@@ -162,12 +181,9 @@ export default function AdminUsersPage() {
       });
       const result = await response.json();
       if (!response.ok) {
-        if (result.code === 'email_exists') {
-          toast({
-            title: "Email Already Exists",
-            description: "A user with this email address is already registered. Please use a different email.",
-            variant: "destructive",
-          });
+        if (response.status === 409 || result.code === 'user_exists') {
+          setFormError('email');
+          setEmailError('A user with this email already exists');
           setLoading(false);
           return;
         }
@@ -192,16 +208,7 @@ export default function AdminUsersPage() {
         });
       }
       setIsAddUserDialogOpen(false);
-      setNewUser({
-        email: "",
-        first_name: "",
-        last_name: "",
-        phone: "",
-        role: "pet_owner",
-        password: "",
-        sendEmail: true,
-      });
-      setSendEmail(true);
+      resetForm();
       fetchUsers();
     } catch (error: any) {
       console.error("Error adding user:", error);
@@ -365,7 +372,15 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">User Management</h1>
-        <Dialog open={isAddUserDialogOpen} onOpenChange={setIsAddUserDialogOpen}>
+        <Dialog
+          open={isAddUserDialogOpen}
+          onOpenChange={(open) => {
+            setIsAddUserDialogOpen(open);
+            if (!open) {
+              resetForm();
+            }
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="bg-teal-600 hover:bg-teal-700">
               <Plus className="mr-2 h-4 w-4" /> Add User
@@ -391,8 +406,18 @@ export default function AdminUsersPage() {
                   id="email"
                   placeholder="user@example.com"
                   value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  onChange={(e) => {
+                    setNewUser({ ...newUser, email: e.target.value });
+                    if (formError === 'email') {
+                      setFormError('');
+                      setEmailError('');
+                    }
+                  }}
+                  className={formError === 'email' ? "border-red-300 focus:border-red-500" : ""}
                 />
+                {formError === 'email' && (
+                  <p className="text-sm text-red-500 mt-1">{emailError}</p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

@@ -9,38 +9,41 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 async function createUser(userData: any, req: NextRequest) {
   try {
     logger.info('Creating new user', { email: userData.email, role: userData.role }, req);
-    // First check if user exists in auth
+    // Fetch all users and filter by email manually (since 'filter' is not a valid option)
     const { data: existingUsers, error: userCheckError } = await supabaseAdmin.auth.admin.listUsers();
     if (userCheckError) {
       logger.error('Error checking for existing users', { error: userCheckError.message }, req);
       return NextResponse.json({ error: userCheckError.message }, { status: 500 });
     }
-    // Check if email already exists in the Auth system
-    const emailExists = existingUsers.users.some(user => 
-      user.email?.toLowerCase() === userData.email.toLowerCase()
-    );
+    const emailExists = existingUsers && existingUsers.users && existingUsers.users.some(user => user.email?.toLowerCase() === userData.email.toLowerCase());
     if (emailExists) {
-      logger.error('User with this email already exists', { email: userData.email }, req);
-      return NextResponse.json({ code: 'email_exists', error: 'User with this email already exists' }, { status: 400 });
+      logger.warn('User with this email already exists', { email: userData.email }, req);
+      return NextResponse.json(
+        { error: 'A user with this email already exists', code: 'user_exists' },
+        { status: 409 }
+      );
     }
-    // Prepare user data with a password if provided
-    const createUserPayload: any = {
+    // Proceed with user creation if email doesn't exist
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email: userData.email,
+      password: userData.password || Math.random().toString(36).slice(-8) + "A1!",
       email_confirm: true,
       user_metadata: {
         role: userData.role,
         first_name: userData.first_name,
         last_name: userData.last_name,
         phone: userData.phone
-      }
-    };
-    if (userData.password) {
-      createUserPayload.password = userData.password;
-    }
-    // Create user in Auth
-    const { data, error } = await supabaseAdmin.auth.admin.createUser(createUserPayload);
+      },
+    });
     if (error) {
-      logger.error('Failed to create user in Auth', { error: error.message, email: userData.email }, req);
+      if (error.message && error.message.includes('already exists')) {
+        logger.warn('User with this email already exists', { email: userData.email }, req);
+        return NextResponse.json(
+          { error: 'A user with this email already exists', code: 'user_exists' },
+          { status: 409 }
+        );
+      }
+      logger.error('Failed to create user', { error: error.message, email: userData.email }, req);
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
     if (!data.user) {
@@ -60,17 +63,12 @@ async function createUser(userData: any, req: NextRequest) {
         created_at: new Date().toISOString(),
       });
     if (dbError) {
-      // If database insert fails, try to delete the auth user to maintain consistency
       logger.error('Failed to create user in database', { error: dbError.message, email: userData.email }, req);
       await supabaseAdmin.auth.admin.deleteUser(data.user.id).catch(e => {
-        logger.error('Failed to clean up auth user after database error', { 
-          error: e.message, 
-          userId: data.user.id 
-        }, req);
+        logger.error('Failed to clean up auth user after database error', { error: e.message, userId: data.user.id }, req);
       });
       return NextResponse.json({ error: dbError.message }, { status: 400 });
     }
-    // Send password reset email if requested
     if (userData.send_email) {
       const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
         type: 'recovery',
@@ -78,7 +76,6 @@ async function createUser(userData: any, req: NextRequest) {
       });
       if (resetError) {
         logger.error('Error sending password reset email', { error: resetError.message, email: userData.email }, req);
-        // Don't return an error here, as the user was successfully created
       }
     }
     logger.info('User created successfully', { userId: data.user.id, email: userData.email }, req);
