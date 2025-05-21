@@ -82,8 +82,9 @@ export default function AdminUsersPage() {
     setUsers([]);
     
     try {
-      // Directly call the API - middleware ensures this is only accessible by admins
-      const response = await fetch('/api/admin/users');
+      // Add a cache-busting parameter to prevent cached responses
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/admin/users?t=${timestamp}`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -107,6 +108,10 @@ export default function AdminUsersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    console.log("Users state updated:", users.length, users);
+  }, [users]);
 
   useEffect(() => {
     fetchUsers();
@@ -174,6 +179,7 @@ export default function AdminUsersPage() {
 
   const handleUpdateUser = async () => {
     if (!userToEdit) return;
+    console.log("Updating user:", userToEdit);
     setLoading(true);
     try {
       const response = await fetch('/api/admin/user-management', {
@@ -193,15 +199,26 @@ export default function AdminUsersPage() {
         }),
       });
       const result = await response.json();
+      console.log("Update response:", result);
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to update user');
+        throw new Error(result.error || `Failed to update user: ${response.status}`);
+      }
+      // Immediately update the local state with the updated user
+      if (result.success && result.user) {
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === userToEdit.id ? { ...user, ...result.user } : user
+          )
+        );
       }
       toast({
         title: "Success",
         description: "User has been updated successfully.",
       });
       setIsEditUserDialogOpen(false);
-      fetchUsers();
+      // Then refresh the full list
+      await fetchUsers();
+      console.log("Users refetched after update");
     } catch (error: any) {
       console.error("Error updating user:", error);
       toast({

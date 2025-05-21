@@ -36,7 +36,7 @@ async function createUser(userData: any, req: NextRequest) {
 
 async function updateUser(userData: any, req: NextRequest) {
   try {
-    logger.info('Updating user', { userId: userData.id, email: userData.email }, req);
+    logger.info('Updating user', { userId: userData.id }, req);
 
     // Pre-check: verify user exists in Auth
     const { data: authUser, error: fetchError } = await supabaseAdmin.auth.admin.getUserById(userData.id);
@@ -44,26 +44,52 @@ async function updateUser(userData: any, req: NextRequest) {
       logger.error('User not found in Auth', { userId: userData.id, fetchError }, req);
       return NextResponse.json({ error: 'User not found in authentication system.' }, { status: 404 });
     }
-    
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+    // Update auth metadata
+    const { data: updatedUser, error: authError } = await supabaseAdmin.auth.admin.updateUserById(
       userData.id,
       {
-        email: userData.email,
         user_metadata: {
-          role: userData.role,
-          first_name: userData.firstName,
-          last_name: userData.lastName,
-        },
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          phone: userData.phone,
+          role: userData.role
+        }
       }
     );
-
-    if (error) {
-      logger.error('Failed to update user', { error: error.message, userId: userData.id }, req);
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (authError) {
+      logger.error('Failed to update user auth', { error: authError.message, userId: userData.id }, req);
+      return NextResponse.json({ error: authError.message }, { status: 400 });
     }
-
+    // Update database record
+    const { data: dbUser, error: dbError } = await supabaseAdmin
+      .from('users')
+      .update({
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        phone: userData.phone,
+        role: userData.role,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userData.id)
+      .select('*')
+      .single();
+    if (dbError) {
+      logger.error('Failed to update user in database', { error: dbError.message, userId: userData.id }, req);
+      return NextResponse.json({ error: dbError.message }, { status: 400 });
+    }
     logger.info('User updated successfully', { userId: userData.id }, req);
-    return NextResponse.json({ user: data.user });
+    // Return the full updated user object
+    return NextResponse.json({
+      success: true,
+      user: dbUser || {
+        id: userData.id,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        phone: userData.phone,
+        role: userData.role,
+        email: authUser.user.email
+      }
+    });
   } catch (error: any) {
     logger.error('Unexpected error in updateUser', { error: error.message }, req);
     return NextResponse.json({ error: error.message }, { status: 500 });
