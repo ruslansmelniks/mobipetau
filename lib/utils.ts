@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { format } from "date-fns"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -20,4 +21,10 @@ export function redirectBasedOnRole(role: string | undefined, router: any) {
     // If no recognized role, default to pet owner portal
     router.push('/portal/bookings');
   }
+}
+
+export function formatAppointmentDate(date: string): string {
+  // Implementation of formatAppointmentDate function
+  // This is a placeholder and should be replaced with the actual implementation
+  return format(new Date(date), 'MMM d, yyyy');
 }

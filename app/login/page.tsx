@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
-import { SmartLogo } from "@/components/smart-logo"
+import Image from "next/image"
 import { logger } from "@/lib/logger"
 
 export default function LoginPage() {
@@ -85,85 +84,120 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <SmartLogo className="mx-auto" />
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
+    <div className="min-h-screen flex flex-col">
+      {/* Header */}
+      <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
+        <div className="flex items-center">
+          <Link href="/" className="flex items-center">
+            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+          </Link>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+        <nav className="hidden md:flex items-center space-x-8">
+          <Link href="/services" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+            Services
+          </Link>
+          <Link href="/services" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+            Locations
+          </Link>
+          <Link href="/book" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+            Book appointment
+          </Link>
+        </nav>
+        <div className="flex items-center space-x-4">
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-[#fcfcfd] border-[#d0d5dd] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] hover:bg-gray-50"
+            asChild
+          >
+            <Link href="/login">Log in</Link>
+          </Button>
+          <Button
+            size="sm"
+            className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+            asChild
+          >
+            <Link href="/signup">Sign up</Link>
+          </Button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4">
+        <div className="w-full max-w-md flex flex-col items-center">
+          <h1 className="text-3xl font-bold mb-2 text-center">Sign in to your account</h1>
+          <p className="text-gray-600 mb-8 text-center">Welcome back! Please enter your details</p>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm w-full">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4 w-full">
             <div>
-              <Label htmlFor="email" className="sr-only">
-                Email address
-              </Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
-                autoComplete="email"
-                required
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
+                required
+                className="w-full"
               />
             </div>
+
             <div className="relative">
-              <Label htmlFor="password" className="sr-only">
-                Password
-              </Label>
               <Input
                 id="password"
-                name="password"
                 type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                required
+                className="w-full"
               />
               <button
                 type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                tabIndex={-1}
               >
-                {showPassword ? (
-                  <EyeOff className="h-5 w-5 text-gray-400" />
-                ) : (
-                  <Eye className="h-5 w-5 text-gray-400" />
-                )}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
-          <div>
             <Button
               type="submit"
+              className="w-full bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] h-11"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
-          </div>
 
-          <div className="text-sm text-center">
-            <Link
-              href="/signup"
-              className="font-medium text-teal-600 hover:text-teal-500"
-            >
-              Don't have an account? Sign up
-            </Link>
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-600">
+                Don't have an account?{" "}
+                <Link href="/signup" className="text-teal-600 hover:text-teal-700 font-medium">
+                  Sign up
+                </Link>
+              </p>
+            </div>
+          </form>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="py-8 border-t mt-auto">
+        <div className="container mx-auto px-4 max-w-[1400px]">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="mb-4 md:mb-0">
+              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+            </div>
+            <div className="text-sm text-gray-500">© 2025 MobiPet. All rights reserved.</div>
           </div>
-        </form>
-      </div>
+        </div>
+      </footer>
     </div>
-  );
+  )
 }
