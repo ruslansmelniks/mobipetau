@@ -2,18 +2,31 @@
 
 import { useUser } from '@supabase/auth-helpers-react';
 import { useAppointments } from '@/hooks/useAppointments';
-import { AppointmentWithRelations } from '@/lib/api/appointments';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin } from 'lucide-react';
+import { Calendar, Clock, MapPin, AlertCircle } from 'lucide-react';
 import { formatAppointmentDate } from '@/lib/utils';
 import Link from 'next/link';
 
 export default function BookingsPage() {
   const user = useUser();
   const { useUserAppointments } = useAppointments();
+  const [retryCount, setRetryCount] = useState(0);
   
-  const { data: appointments, isLoading, error } = useUserAppointments(user?.id ?? '');
+  const { data: appointments, isLoading, error, refetch } = useUserAppointments(user?.id ?? '');
+
+  // Add retry logic
+  useEffect(() => {
+    if (error && retryCount < 3) {
+      const timer = setTimeout(() => {
+        refetch();
+        setRetryCount(prev => prev + 1);
+      }, 1000 * (retryCount + 1)); // Exponential backoff
+
+      return () => clearTimeout(timer);
+    }
+  }, [error, retryCount, refetch]);
 
   if (!user) {
     return (
@@ -39,11 +52,29 @@ export default function BookingsPage() {
     );
   }
 
-  if (error) {
+  if (error && retryCount >= 3) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <p className="text-red-600">Error loading appointments. Please try again.</p>
+        <div className="text-center p-4 max-w-md">
+          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Unable to Load Appointments</h2>
+          <p className="text-gray-600 mb-4">We're having trouble loading your appointments. This might be a temporary issue.</p>
+          <div className="space-y-2">
+            <Button 
+              onClick={() => {
+                setRetryCount(0);
+                refetch();
+              }}
+              className="w-full"
+            >
+              Try Again
+            </Button>
+            <Link href="/book">
+              <Button variant="outline" className="w-full">
+                Book New Appointment
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -64,66 +95,53 @@ export default function BookingsPage() {
 
   return (
     <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Your Appointments</h1>
-      <div className="grid gap-6">
-        {appointments.map((appointment) => (
-          <AppointmentCard key={appointment.id} appointment={appointment} />
-        ))}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-2xl font-bold">My Bookings</h1>
+        <Link href="/book">
+          <Button>Book New Appointment</Button>
+        </Link>
       </div>
+
+      {appointments && appointments.length > 0 ? (
+        <div className="grid gap-6">
+          {appointments.map((appointment) => (
+            <Card key={appointment.id}>
+              <CardHeader>
+                <CardTitle>Appointment for {appointment.pets?.name}</CardTitle>
+                <CardDescription>
+                  Status: <span className="capitalize">{appointment.status}</span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span>{appointment.date ? formatAppointmentDate(appointment.date) : 'Date not set'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-gray-500" />
+                    <span>{appointment.time_slot}</span>
+                  </div>
+                  {appointment.address && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-500" />
+                      <span>{appointment.address}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <h2 className="text-xl font-semibold mb-2">No Appointments Yet</h2>
+          <p className="text-gray-600 mb-4">You haven't booked any appointments yet.</p>
+          <Link href="/book">
+            <Button>Book Your First Appointment</Button>
+          </Link>
+        </div>
+      )}
     </div>
-  );
-}
-
-function AppointmentCard({ appointment }: { appointment: AppointmentWithRelations }) {
-  const statusColors = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    confirmed: 'bg-green-100 text-green-800',
-    completed: 'bg-blue-100 text-blue-800',
-    cancelled: 'bg-red-100 text-red-800',
-    declined: 'bg-red-100 text-red-800',
-    in_progress: 'bg-purple-100 text-purple-800',
-  };
-
-  const statusColor = statusColors[appointment.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800';
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="text-xl">
-              {appointment.pets?.name || 'Pet Name'}
-            </CardTitle>
-            <CardDescription>
-              {formatAppointmentDate(appointment.date)}
-            </CardDescription>
-          </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor}`}>
-            {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center text-gray-600">
-            <Clock className="w-4 h-4 mr-2" />
-            <span>{appointment.time_slot}</span>
-          </div>
-          {appointment.address && (
-            <div className="flex items-center text-gray-600">
-              <MapPin className="w-4 h-4 mr-2" />
-              <span>{appointment.address}</span>
-            </div>
-          )}
-          {appointment.status === 'pending' && (
-            <div className="flex justify-end">
-              <Link href={`/book/payment?appointmentId=${appointment.id}`}>
-                <Button>Complete Booking</Button>
-              </Link>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   );
 }

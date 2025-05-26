@@ -2,80 +2,114 @@
 
 import { useState, useEffect } from "react"
 import { Bell } from "lucide-react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Badge } from "@/components/ui/badge"
 
 export function NotificationBell() {
-  const [notificationCount, setNotificationCount] = useState(0)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<any[]>([])
   const [isOpen, setIsOpen] = useState(false)
-  const user = useUser()
   const supabase = useSupabaseClient()
+  const user = useUser()
 
   useEffect(() => {
-    if (!user) return;
-    // Fetch unread notifications count
-    const fetchNotificationCount = async () => {
-      const { count, error } = await supabase
-        .from("notifications")
-        .select("*", { count: 'exact', head: true })
-        .eq("user_id", user.id)
-        .eq("read", false);
-      if (!error) setNotificationCount(count || 0);
-    };
-    fetchNotificationCount();
-  }, [user, supabase]);
+    if (!user) return
 
-  const handleOpenChange = async (open: boolean) => {
-    setIsOpen(open);
-    if (open && user) {
-      // Fetch notifications
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(10);
-      if (!error) setNotifications(data || []);
+    const fetchNotifications = async () => {
+      try {
+        // First check if notifications table exists
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('read', false)
+          .order('created_at', { ascending: false })
+          .limit(10)
+
+        if (error) {
+          // If table doesn't exist or other error, just silently fail
+          console.log('Notifications not available:', error.message)
+          return
+        }
+
+        if (data) {
+          setNotifications(data)
+          setUnreadCount(data.length)
+        }
+      } catch (err) {
+        console.log('Error fetching notifications:', err)
+      }
     }
-  };
+
+    fetchNotifications()
+
+    // Set up realtime subscription with error handling
+    const channel = supabase
+      .channel(`notifications:${user.id}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        }, 
+        () => {
+          fetchNotifications()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user, supabase])
+
+  const markAsRead = async (notificationId: string) => {
+    try {
+      await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId)
+    } catch (err) {
+      console.log('Error marking notification as read:', err)
+    }
+  }
 
   return (
-    <Popover open={isOpen} onOpenChange={handleOpenChange}>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button
-          className={`w-10 h-10 rounded-full flex items-center justify-center relative ${notificationCount > 0 ? "bg-amber-50" : ""}`}
-          aria-label="Notifications"
-        >
-          <Bell className={`h-5 w-5 ${notificationCount > 0 ? "text-amber-600" : "text-gray-500"}`} />
-          {notificationCount > 0 && (
-            <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
-              {notificationCount > 9 ? '9+' : notificationCount}
-            </span>
+        <Button variant="ghost" size="icon" className="relative">
+          <Bell className="h-5 w-5" />
+          {unreadCount > 0 && (
+            <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center bg-red-500">
+              {unreadCount}
+            </Badge>
           )}
-        </button>
+        </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
-        <div className="flex items-center justify-between p-4 border-b">
+      <PopoverContent className="w-80">
+        <div className="space-y-2">
           <h3 className="font-medium">Notifications</h3>
-        </div>
-        <div className="max-h-72 overflow-y-auto">
           {notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 p-4 text-center">
-              <Bell className="h-10 w-10 text-gray-300 mb-2" />
-              <p className="text-gray-500">No notifications yet</p>
-            </div>
+            <p className="text-sm text-gray-500">No new notifications</p>
           ) : (
-            <div className="divide-y">
+            <div className="space-y-2">
               {notifications.map((notification) => (
-                <div key={notification.id} className={`p-4 ${notification.read ? 'bg-white' : 'bg-blue-50'}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm">{notification.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p>
-                    </div>
-                  </div>
+                <div
+                  key={notification.id}
+                  className="p-2 hover:bg-gray-50 rounded cursor-pointer"
+                  onClick={() => markAsRead(notification.id)}
+                >
+                  <p className="text-sm">{notification.message}</p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(notification.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               ))}
             </div>
@@ -83,5 +117,5 @@ export function NotificationBell() {
         </div>
       </PopoverContent>
     </Popover>
-  );
+  )
 } 

@@ -26,18 +26,63 @@ export class AppointmentService {
   }
 
   async getAppointmentsByUser(userId: string): Promise<AppointmentWithRelations[]> {
-    const { data, error } = await this.supabase
-      .from('appointments')
-      .select(`
-        *,
-        pets:pet_id (*),
-        pet_owner:pet_owner_id (*)
-      `)
-      .eq('pet_owner_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      // First, let's try a simpler query to debug
+      const { data: appointments, error: appointmentsError } = await this.supabase
+        .from('appointments')
+        .select('*')
+        .eq('pet_owner_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    return data || [];
+      if (appointmentsError) {
+        console.error('Error fetching appointments:', appointmentsError);
+        throw appointmentsError;
+      }
+
+      // If no appointments, return empty array
+      if (!appointments || appointments.length === 0) {
+        return [];
+      }
+
+      // Now fetch related data separately to avoid join issues
+      const appointmentsWithRelations = await Promise.all(
+        appointments.map(async (appointment) => {
+          let pet = null;
+          let pet_owner = null;
+
+          // Fetch pet data if pet_id exists
+          if (appointment.pet_id) {
+            const { data: petData } = await this.supabase
+              .from('pets')
+              .select('*')
+              .eq('id', appointment.pet_id)
+              .single();
+            pet = petData;
+          }
+
+          // Fetch pet owner data
+          if (appointment.pet_owner_id) {
+            const { data: ownerData } = await this.supabase
+              .from('users')
+              .select('*')
+              .eq('id', appointment.pet_owner_id)
+              .single();
+            pet_owner = ownerData;
+          }
+
+          return {
+            ...appointment,
+            pets: pet,
+            pet_owner: pet_owner,
+          };
+        })
+      );
+
+      return appointmentsWithRelations;
+    } catch (error) {
+      console.error('Error in getAppointmentsByUser:', error);
+      return [];
+    }
   }
 
   async getOrCreateDraft(userId: string): Promise<Appointment> {
