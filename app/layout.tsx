@@ -3,6 +3,7 @@ import './globals.css'
 import SupabaseProvider from './SupabaseProvider'
 import { SmartLogo } from "@/components/smart-logo"
 import { NotificationBell } from "@/components/notification-bell"
+import { Providers } from '@/components/providers'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -19,7 +20,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <SupabaseProvider>
-          {children}
+          <Providers>
+            {children}
+          </Providers>
         </SupabaseProvider>
       </body>
     </html>

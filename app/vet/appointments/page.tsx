@@ -8,73 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-
-// Mock appointment data - in a real app, this would come from your backend
-const appointments = [
-  {
-    id: "APT-25061001",
-    status: "pending_approval", // pending_approval, confirmed, completed, cancelled
-    pet: {
-      name: "Twinnie",
-      type: "Gray rabbit",
-      image: "/placeholder.svg?key=7jhda",
-      owner: "John Smith",
-    },
-    service: {
-      title: "After hours home visit",
-      price: 299,
-    },
-    requestedDate: "Tuesday, June 10, 2025",
-    requestedTime: "06:00 - 08:00 AM",
-    address: "123 Example Street, Perth WA 6000",
-    additionalInfo: "Gate code: 1234",
-    notes: "Pet hasn't been eating much for the past two days and seems lethargic.",
-  },
-  {
-    id: "APT-25060502",
-    status: "confirmed",
-    pet: {
-      name: "Max",
-      type: "Golden Retriever",
-      image: "/placeholder.svg?key=dog1",
-      owner: "Sarah Johnson",
-    },
-    service: {
-      title: "Regular checkup",
-      price: 150,
-    },
-    requestedDate: "Thursday, June 5, 2025",
-    requestedTime: "02:00 - 04:00 PM",
-    confirmedDate: "Thursday, June 5, 2025",
-    confirmedTime: "03:00 - 05:00 PM",
-    address: "456 Main Street, Perth WA 6000",
-    additionalInfo: "",
-    notes: "Annual checkup and vaccinations.",
-  },
-  {
-    id: "APT-25052201",
-    status: "completed",
-    pet: {
-      name: "Whiskers",
-      type: "Tabby Cat",
-      image: "/tabby-cat-sunbeam.png",
-      owner: "Michael Brown",
-    },
-    service: {
-      title: "Vaccination",
-      price: 120,
-    },
-    requestedDate: "Wednesday, May 22, 2025",
-    requestedTime: "10:00 AM - 12:00 PM",
-    confirmedDate: "Wednesday, May 22, 2025",
-    confirmedTime: "11:00 AM - 01:00 PM",
-    address: "789 Oak Avenue, Perth WA 6000",
-    additionalInfo: "",
-    notes: "Routine vaccinations and general health check.",
-  },
-]
+import { useAppointments } from "@/hooks/useAppointments"
+import { useUser } from "@supabase/auth-helpers-react"
+import { AppointmentWithRelations } from "@/lib/api/appointments"
 
 export default function VetAppointmentsPage() {
+  const user = useUser();
+  const { useUserAppointments, useUpdateAppointmentStatus } = useAppointments();
+  const { data: appointments = [], isLoading } = useUserAppointments(user?.id ?? '');
+  const updateAppointmentStatus = useUpdateAppointmentStatus();
+
   const [searchTerm, setSearchTerm] = useState("")
   const [proposedTime, setProposedTime] = useState("")
 
@@ -95,181 +38,201 @@ export default function VetAppointmentsPage() {
 
   const filteredAppointments = appointments.filter(
     (appointment) =>
-      appointment.pet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.pet.owner.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.service.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.id.toLowerCase().includes(searchTerm.toLowerCase()),
+      appointment.pets?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      appointment.pet_owner?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      appointment.pet_owner?.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const pendingAppointments = filteredAppointments.filter((appointment) => appointment.status === "pending_approval")
   const upcomingAppointments = filteredAppointments.filter(
-    (appointment) => appointment.status === "confirmed" && appointment.confirmedDate && new Date(appointment.confirmedDate) >= new Date(),
+    (appointment) => appointment.status === "confirmed" && appointment.date && new Date(appointment.date) >= new Date()
   )
   const pastAppointments = filteredAppointments.filter(
-    (appointment) => appointment.status === "completed" || appointment.status === "cancelled",
+    (appointment) => appointment.status === "completed" || appointment.status === "cancelled"
   )
 
-  const acceptAppointment = (id: string) => {
-    // In a real app, this would call an API to accept the appointment
-    alert(`In a real app, this would accept appointment ${id}.`)
+  const handleAcceptAppointment = async (id: string) => {
+    try {
+      await updateAppointmentStatus.mutateAsync({
+        id,
+        status: 'confirmed'
+      });
+    } catch (error) {
+      console.error('Error accepting appointment:', error);
+    }
   }
 
-  const proposeNewTime = (id: string) => {
-    // In a real app, this would call an API to propose a new time
-    alert(`In a real app, this would propose a new time for appointment ${id}: ${proposedTime}`)
-    setProposedTime("")
+  const handleProposeNewTime = async (id: string) => {
+    if (!proposedTime) return;
+    
+    try {
+      await updateAppointmentStatus.mutateAsync({
+        id,
+        status: 'pending_approval',
+        options: {
+          proposedTime,
+          message: `Vet has proposed a new time: ${proposedTime}`
+        }
+      });
+      setProposedTime("");
+    } catch (error) {
+      console.error('Error proposing new time:', error);
+    }
   }
 
-  const declineAppointment = (id: string) => {
-    // In a real app, this would call an API to decline the appointment
-    alert(`In a real app, this would decline appointment ${id}.`)
+  const handleDeclineAppointment = async (id: string) => {
+    try {
+      await updateAppointmentStatus.mutateAsync({
+        id,
+        status: 'cancelled',
+        options: {
+          message: 'Appointment declined by vet'
+        }
+      });
+    } catch (error) {
+      console.error('Error declining appointment:', error);
+    }
   }
 
-  const renderAppointmentCard = (appointment: (typeof appointments)[0]) => {
-    const status = getStatusLabel(appointment.status)
+  const renderAppointmentCard = (appointment: AppointmentWithRelations) => {
+    const statusInfo = getStatusLabel(appointment.status);
+    const isPending = appointment.status === "pending_approval";
 
     return (
-      <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-6">
-        {/* Appointment Header */}
-        <div className="p-6 border-b">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                <Image
-                  src={appointment.pet.image || "/placeholder.svg"}
-                  alt={appointment.pet.name}
-                  width={48}
-                  height={48}
-                  className="w-full h-auto object-cover"
-                />
-              </div>
-              <div>
-                <h2 className="font-semibold text-lg">{appointment.service.title}</h2>
-                <p className="text-gray-600">
-                  For {appointment.pet.name} ({appointment.pet.type}) • Owner: {appointment.pet.owner}
-                </p>
-              </div>
+      <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden">
+        <div className="p-6">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h3 className="text-lg font-semibold">
+                {appointment.pets?.name || 'Unknown Pet'}
+              </h3>
+              <p className="text-gray-600">
+                {appointment.pet_owner?.first_name} {appointment.pet_owner?.last_name}
+              </p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>{status.label}</span>
-              <span className="text-gray-500 text-sm">#{appointment.id}</span>
-            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
+              {statusInfo.label}
+            </span>
           </div>
-        </div>
 
-        {/* Appointment Details */}
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start">
-              <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="font-medium">
-                  {appointment.status === "pending_approval" ? "Requested Date" : "Appointment Date"}
-                </p>
-                <p className="text-gray-600">
-                  {appointment.status === "pending_approval"
-                    ? appointment.requestedDate
-                    : appointment.confirmedDate || appointment.requestedDate}
-                </p>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="flex items-start">
+                <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    {isPending ? "Requested Date" : "Appointment Date"}
+                  </p>
+                  <p className="text-gray-600">
+                    {appointment.date ? new Date(appointment.date).toLocaleDateString() : 'Not set'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start">
+                <Clock className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    {isPending ? "Requested Time" : "Appointment Time"}
+                  </p>
+                  <p className="text-gray-600">
+                    {appointment.time_slot || 'Not set'}
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="flex items-start">
-              <Clock className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="font-medium">
-                  {appointment.status === "pending_approval" ? "Requested Time" : "Appointment Time"}
-                </p>
-                <p className="text-gray-600">
-                  {appointment.status === "pending_approval"
-                    ? appointment.requestedTime
-                    : appointment.confirmedTime || appointment.requestedTime}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start">
-              <MapPin className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="font-medium">Address</p>
-                <p className="text-gray-600">{appointment.address}</p>
-                {appointment.additionalInfo && <p className="text-gray-600 text-sm">{appointment.additionalInfo}</p>}
-              </div>
-            </div>
-            <div className="flex items-start">
-              <div className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0">$</div>
-              <div>
-                <p className="font-medium">Service Fee</p>
-                <p className="text-gray-600">${appointment.service.price}</p>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Pet Notes */}
-        {appointment.notes && (
-          <div className="px-6 pb-6">
-            <div className="bg-gray-50 p-4 rounded-lg border">
-              <p className="font-medium mb-1">Notes</p>
-              <p className="text-gray-600">{appointment.notes}</p>
+            <div className="space-y-4">
+              <div className="flex items-start">
+                <MapPin className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Address</p>
+                  <p className="text-gray-600">{appointment.address || 'Not provided'}</p>
+                </div>
+              </div>
+              {appointment.additional_info && (
+                <div className="flex items-start">
+                  <div>
+                    <p className="font-medium">Additional Info</p>
+                    <p className="text-gray-600">{appointment.additional_info}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
 
-        {/* Actions */}
-        <div className="p-6 bg-gray-50 border-t">
-          <div className="flex flex-wrap justify-between gap-4">
-            <Button variant="outline" asChild>
-              <Link href={`/vet/messages?appointment=${appointment.id}`}>
-                <span className="flex items-center">Message pet owner</span>
-              </Link>
-            </Button>
-            <div className="flex flex-wrap gap-3">
-              {appointment.status === "pending_approval" && (
-                <>
-                  <Button
-                    variant="outline"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => declineAppointment(appointment.id)}
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    Decline
-                  </Button>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Propose time (e.g., 2-4 PM)"
-                      className="w-40"
-                      value={proposedTime}
-                      onChange={(e) => setProposedTime(e.target.value)}
-                    />
+          <div className="p-6 bg-gray-50 border-t">
+            <div className="flex flex-wrap justify-between gap-4">
+              <Button variant="outline" asChild>
+                <Link href={`/vet/messages?appointment=${appointment.id}`}>
+                  <span className="flex items-center">Message pet owner</span>
+                </Link>
+              </Button>
+              <div className="flex flex-wrap gap-3">
+                {isPending && (
+                  <>
                     <Button
                       variant="outline"
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                      onClick={() => proposeNewTime(appointment.id)}
-                      disabled={!proposedTime}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => handleDeclineAppointment(appointment.id)}
+                      disabled={updateAppointmentStatus.isPending}
                     >
-                      Propose Time
+                      <X className="mr-2 h-4 w-4" />
+                      {updateAppointmentStatus.isPending ? "Declining..." : "Decline"}
                     </Button>
-                  </div>
-                  <Button
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Propose time (e.g., 2-4 PM)"
+                        className="w-40"
+                        value={proposedTime}
+                        onChange={(e) => setProposedTime(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        onClick={() => handleProposeNewTime(appointment.id)}
+                        disabled={!proposedTime || updateAppointmentStatus.isPending}
+                      >
+                        {updateAppointmentStatus.isPending ? "Proposing..." : "Propose Time"}
+                      </Button>
+                    </div>
+                    <Button
+                      className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+                      onClick={() => handleAcceptAppointment(appointment.id)}
+                      disabled={updateAppointmentStatus.isPending}
+                    >
+                      <Check className="mr-2 h-4 w-4" />
+                      {updateAppointmentStatus.isPending ? "Accepting..." : "Accept"}
+                    </Button>
+                  </>
+                )}
+                {appointment.status === "confirmed" && (
+                  <Button 
                     className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-                    onClick={() => acceptAppointment(appointment.id)}
+                    asChild
                   >
-                    <Check className="mr-2 h-4 w-4" />
-                    Accept
+                    <Link href={`/vet/appointments/${appointment.id}`}>
+                      View Details
+                    </Link>
                   </Button>
-                </>
-              )}
-              {appointment.status === "confirmed" && (
-                <Button className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]">
-                  View Details
-                </Button>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
     )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="text-center p-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading appointments...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

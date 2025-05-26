@@ -19,13 +19,21 @@ import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
 import { BookingWarning } from "@/components/booking-warning"
+import { useAppointmentBooking } from '@/hooks/useAppointmentBooking'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MapPin } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 // Time slot options based on time of day
-const timeSlots = {
-  morning: ["06:00 - 08:00 AM", "08:00 - 10:00 AM"],
-  afternoon: ["10:00 AM - 12:00 PM", "12:00 - 02:00 PM", "02:00 - 05:00 PM"],
-  evening: ["05:00 - 06:30 PM", "06:30 - 08:00 PM"],
-}
+const timeSlots = [
+  '06:00 - 08:00 AM',
+  '08:00 - 10:00 AM',
+  '10:00 AM - 12:00 PM',
+  '12:00 - 02:00 PM',
+  '02:00 - 04:00 PM',
+  '04:00 - 06:00 PM',
+  '06:00 - 08:00 PM',
+]
 
 // Perth suburb list - expanded with postal codes
 const perthSuburbs = [
@@ -139,20 +147,37 @@ export default function AppointmentDetails() {
   const supabase = useSupabaseClient()
   const { isLoading: sessionLoading } = useSessionContext()
   const user = useUser()
+  const {
+    draftAppointment,
+    isLoadingDraft,
+    error,
+    updateAddress,
+    updateDateTime,
+    updateAdditionalInfo,
+    isUpdating,
+  } = useAppointmentBooking()
 
   // Form state
-  const [address, setAddress] = useState("")
-  const [additionalInfo, setAdditionalInfo] = useState("")
-  const [date, setDate] = useState<Date | undefined>(undefined)
-  const [timeOfDay, setTimeOfDay] = useState<"morning" | "afternoon" | "evening" | null>(null)
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null)
-  const [isInPerth, setIsInPerth] = useState(true)
-  const [draftId, setDraftId] = useState<string | null>(null)
-  const [addressLatLng, setAddressLatLng] = useState<{ lat: number, lng: number } | null>(null);
+  const [address, setAddress] = useState(draftAppointment?.address || '')
+  const [additionalInfo, setAdditionalInfo] = useState(draftAppointment?.additional_info || '')
+  const [date, setDate] = useState<Date | undefined>(
+    draftAppointment?.date ? new Date(draftAppointment.date) : undefined
+  )
+  const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening'>(
+    draftAppointment?.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning'
+  )
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(
+    draftAppointment?.time_slot || null
+  )
+  const [isInPerth, setIsInPerth] = useState(draftAppointment?.is_in_perth ?? true)
+  const [addressLatLng, setAddressLatLng] = useState<{ lat: number; lng: number } | null>(
+    draftAppointment?.latitude && draftAppointment?.longitude
+      ? { lat: draftAppointment.latitude, lng: draftAppointment.longitude }
+      : null
+  )
   
   // UI state
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showPerthWarning, setShowPerthWarning] = useState(false)
 
   // Function to check if an address is in Perth
@@ -214,36 +239,20 @@ export default function AppointmentDetails() {
   // Load or create draft appointment
   useEffect(() => {
     if (!user) return;
-    setError(null);
     setLoading(true);
     // Fetch existing draft appointment
     const fetchDraftAppointment = async () => {
       try {
         const draft = await getOrCreateDraft(supabase, user.id);
-        setDraftId(draft.id);
-        // Set address if already entered
-        if (draft.address) setAddress(draft.address);
-        // Set additional info if any
-        if (draft.additional_info) setAdditionalInfo(draft.additional_info);
-        // Set date if already selected
-        if (draft.date) setDate(new Date(draft.date));
-        // Set time slot if already selected
-        if (draft.time_slot) {
-          setSelectedTimeSlot(draft.time_slot);
-          // Set time of day based on time slot
-          const timeStr = draft.time_slot.split(' ')[0];
-          const hour = parseInt(timeStr.split(':')[0]);
-          if (hour < 10) setTimeOfDay('morning');
-          else if (hour < 17) setTimeOfDay('afternoon');
-          else setTimeOfDay('evening');
-        }
-        // Set map coordinates if already set
-        if (draft.latitude && draft.longitude) {
-          setAddressLatLng({ lat: draft.latitude, lng: draft.longitude });
-        }
+        setAddress(draft.address);
+        setAdditionalInfo(draft.additional_info);
+        setDate(new Date(draft.date));
+        setSelectedTimeSlot(draft.time_slot);
+        setTimeOfDay(draft.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning');
+        setAddressLatLng({ lat: draft.latitude, lng: draft.longitude });
+        setIsInPerth(draft.is_in_perth);
       } catch (err: any) {
-        setError('Failed to fetch booking information. Please try again.');
-        console.error(err);
+        console.error('Failed to fetch booking information. Please try again.');
       }
       setLoading(false);
     };
@@ -252,23 +261,21 @@ export default function AppointmentDetails() {
 
   // Save the appointment data and proceed
   const handleNext = async () => {
-    if (!draftId) return;
-    setError(null);
+    if (!date || !selectedTimeSlot) {
+      return;
+    }
+
     try {
-      await updateDraft(supabase, draftId, {
-        address,
-        additional_info: additionalInfo,
-        date: date?.toISOString(),
-        time_slot: selectedTimeSlot,
-        time_of_day: timeOfDay,
-        latitude: addressLatLng?.lat,
-        longitude: addressLatLng?.lng,
-        is_in_perth: isInPerth
-      });
-      router.push("/book/payment");
-    } catch (err: any) {
-      setError('Error updating appointment details. Please try again.');
-      console.error(err);
+      await updateDateTime(date, selectedTimeSlot, timeOfDay);
+      if (address && addressLatLng) {
+        await updateAddress(address, addressLatLng.lat, addressLatLng.lng, isInPerth);
+      }
+      if (additionalInfo) {
+        await updateAdditionalInfo(additionalInfo);
+      }
+      router.push('/book/payment');
+    } catch (err) {
+      console.error('Error updating appointment:', err);
     }
   };
 
@@ -278,12 +285,29 @@ export default function AppointmentDetails() {
   }, [timeOfDay]);
 
   // Loading state
-  if (loading && !error) {
+  if (isLoadingDraft) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
         <div className="text-center p-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading appointment details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="text-center p-4">
+          <p className="text-red-600">{error}</p>
+          <Button
+            className="mt-4"
+            onClick={() => router.refresh()}
+          >
+            Try Again
+          </Button>
         </div>
       </div>
     );
@@ -312,20 +336,6 @@ export default function AppointmentDetails() {
         <div className="max-w-3xl mx-auto mt-12">
           <h1 className="text-3xl font-bold text-center mb-2">Appointment details</h1>
           <p className="text-center text-gray-600 mb-8">Please provide your address and preferred appointment time.</p>
-
-          {error && error.includes("authenticated") && (
-            <div className="bg-red-100 border border-red-300 text-red-700 p-4 rounded-md mb-6">
-              {error}
-              <div className="mt-4">
-                <Button 
-                  onClick={() => window.location.href = "/login?redirect=/book/appointment"}
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Log in again
-                </Button>
-              </div>
-            </div>
-          )}
 
           <div className="space-y-6">
             {/* Address Section */}
@@ -388,42 +398,22 @@ export default function AppointmentDetails() {
 
                 <div>
                   <Label className="text-base font-medium mb-2 block">Preferred time of the day</Label>
-                  <RadioGroup
-                    value={timeOfDay || ""}
-                    onValueChange={(value) => setTimeOfDay(value as "morning" | "afternoon" | "evening")}
-                    className="flex flex-wrap gap-2"
+                  <Select
+                    value={timeOfDay}
+                    onValueChange={(value: 'morning' | 'afternoon' | 'evening') => {
+                      setTimeOfDay(value);
+                      setSelectedTimeSlot(null);
+                    }}
                   >
-                    <div className="flex-1 min-w-[120px]">
-                      <RadioGroupItem value="morning" id="morning" className="peer hidden" />
-                      <label
-                        htmlFor="morning"
-                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
-                          ${timeOfDay === 'morning' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
-                      >
-                        Morning
-                      </label>
-                    </div>
-                    <div className="flex-1 min-w-[120px]">
-                      <RadioGroupItem value="afternoon" id="afternoon" className="peer hidden" />
-                      <label
-                        htmlFor="afternoon"
-                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
-                          ${timeOfDay === 'afternoon' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
-                      >
-                        Afternoon
-                      </label>
-                    </div>
-                    <div className="flex-1 min-w-[120px]">
-                      <RadioGroupItem value="evening" id="evening" className="peer hidden" />
-                      <label
-                        htmlFor="evening"
-                        className={`flex items-center justify-center h-10 w-full border rounded-md px-3 py-2 cursor-pointer transition-colors duration-150
-                          ${timeOfDay === 'evening' ? 'border-teal-500 bg-teal-50 text-teal-700 shadow' : 'border-gray-200 bg-white text-gray-700 hover:border-teal-200'}`}
-                      >
-                        Evening
-                      </label>
-                    </div>
-                  </RadioGroup>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select time of day" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="morning">Morning</SelectItem>
+                      <SelectItem value="afternoon">Afternoon</SelectItem>
+                      <SelectItem value="evening">Evening</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -432,19 +422,34 @@ export default function AppointmentDetails() {
                 <div className="mt-6">
                   <Label className="text-base font-medium mb-2 block">Available time slots</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {timeSlots[timeOfDay].map((slot) => (
-                      <Button
-                        key={slot}
-                        type="button"
-                        variant="outline"
-                        className={`justify-center ${
-                          selectedTimeSlot === slot ? "border-teal-500 bg-teal-50 text-teal-700" : "border-gray-200"
-                        }`}
-                        onClick={() => setSelectedTimeSlot(slot)}
-                      >
-                        {slot}
-                      </Button>
-                    ))}
+                    {timeSlots.map((slot) => {
+                      const [startTime] = slot.split(' - ');
+                      const hour = parseInt(startTime.split(':')[0]);
+                      const isMorning = hour < 10;
+                      const isAfternoon = hour >= 10 && hour < 17;
+                      const isEvening = hour >= 17;
+
+                      const showSlot =
+                        (timeOfDay === 'morning' && isMorning) ||
+                        (timeOfDay === 'afternoon' && isAfternoon) ||
+                        (timeOfDay === 'evening' && isEvening);
+
+                      if (!showSlot) return null;
+
+                      return (
+                        <Button
+                          key={slot}
+                          type="button"
+                          variant="outline"
+                          className={`justify-center ${
+                            selectedTimeSlot === slot ? "border-teal-500 bg-teal-50 text-teal-700" : "border-gray-200"
+                          }`}
+                          onClick={() => setSelectedTimeSlot(slot)}
+                        >
+                          {slot}
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -460,10 +465,10 @@ export default function AppointmentDetails() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!address || !date || !timeOfDay || !selectedTimeSlot || !isInPerth || loading}
+              disabled={!date || !selectedTimeSlot || !address || isUpdating}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              {loading ? "Saving..." : "Review details"}
+              {isUpdating ? "Saving..." : "Review details"}
             </Button>
           </div>
         </div>

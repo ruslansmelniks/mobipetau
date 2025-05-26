@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, ReactNode } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft, Calendar, Clock, MapPin, Check, AlertCircle, CreditCard } from "lucide-react"
@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { loadStripe } from '@stripe/stripe-js'
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
-import { format, parseISO } from 'date-fns'
-import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { useUser } from "@supabase/auth-helpers-react"
+import { useAppointments } from "@/hooks/useAppointments"
 import { BookingWarning } from "@/components/booking-warning"
 
 // Consistent DraftAppointment type
@@ -77,143 +76,87 @@ const ErrorDisplay = ({ error, onRetry }: { error: string, onRetry: () => void }
   );
 };
 
-const debugDatabase = async (supabase: any, user: any) => {
-  if (!user) return;
-  console.log("User ID being used in query:", user.id);
-  // Check table structure
-  console.log("Examining appointments table structure...");
-  const { data: tableStructure, error: tableError } = await supabase
-    .from('appointments')
-    .select('*')
-    .limit(1);
-  console.log("Table structure:", tableStructure, "Error (if any):", tableError);
-  // Check for draft appointments
-  const { data: draftData, error: draftError } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq('pet_owner_id', user.id)
-    .eq('status', 'pending');
-  console.log("Draft appointment query result:", { error: draftError, data: draftData, count: draftData?.length, status: 200, statusText: '' });
-  if (draftData && draftData.length > 0) {
-    console.log("Draft fetch result:", draftData[0]);
-    console.log("Fetched/Created Appointment Record (structure debug):", JSON.stringify(draftData[0], null, 2));
-  } else {
-    console.log("No draft appointment found");
-  }
-};
+const SummaryItem = ({ icon, label, value }: { icon: React.ReactNode, label: string, value?: string | number | null }) => (
+  <div className="flex items-start">
+    <span className="mr-2 mt-1 text-teal-600">{icon}</span>
+    <div>
+      <p className="font-medium text-gray-700">{label}</p>
+      {value && <p className="text-gray-600">{value}</p>}
+    </div>
+  </div>
+);
 
 export default function PaymentPage() {
   const router = useRouter();
-  const supabase = useSupabaseClient();
   const user = useUser();
+  const { useDraftAppointment } = useAppointments();
+  const { data: draftAppointment, isLoading: isLoadingDraft, error: draftError } = useDraftAppointment(user?.id ?? '');
 
-  const [draftAppointment, setDraftAppointment] = useState<DraftAppointment | null>(null);
-  const [petDetails, setPetDetails] = useState<Pet | null>(null);
-  const [selectedServicesDetails, setSelectedServicesDetails] = useState<Service[]>([]);
-  
-  const [isLoading, setIsLoading] = useState(true);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasMounted, setHasMounted] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<any>(null);
-  const [missingDraft, setMissingDraft] = useState(false);
-  const [missingData, setMissingData] = useState(false);
 
   useEffect(() => {
-    setHasMounted(true);
-    if (!user) return;
-    setIsLoading(true);
-    setError(null);
-    setMissingData(false);
-    const fetchDraftAppointment = async () => {
-      try {
-        // Only fetch, do NOT create a new draft on payment page
-        const { data: drafts, error: fetchError } = await supabase
-          .from('appointments')
-          .select('*')
-          .eq('pet_owner_id', user.id)
-          .eq('status', 'pending')
-          .order('updated_at', { ascending: false });
-        if (fetchError) {
-          setError('Failed to fetch draft appointment. Please try again.');
-          setIsLoading(false);
-          return;
-        }
-        if (!drafts || drafts.length === 0) {
-          setError('No draft appointment found. Please start your booking again.');
-          setIsLoading(false);
-          return;
-        }
-        // Use the most recent draft
-        const draft = drafts[0];
-        setDraftId(draft.id);
-        // Validate all required fields are present
-        if (!draft.pet_id || !draft.services || !draft.date || !draft.time_slot || !draft.address) {
-          setMissingData(true);
-          setIsLoading(false);
-          return;
-        }
-        // Get pet details
-        const { data: pet, error: petError } = await supabase
-          .from('pets')
-          .select('*')
-          .eq('id', draft.pet_id)
-          .single();
-        if (petError) {
-          setError('Failed to load pet details. Please try again.');
-          setIsLoading(false);
-          return;
-        }
-        // Format services
-        const draftServices = Array.isArray(draft.services) ? draft.services : (typeof draft.services === 'string' ? JSON.parse(draft.services) : []);
-        const serviceMap = {
-          '1': { id: '1', name: "After hours home visit", price: 299 },
-          '2': { id: '2', name: "At-Home Peaceful Euthanasia", price: 599 },
-        };
-        const selectedServicesDetails = draftServices.map((id: string) => serviceMap[id as keyof typeof serviceMap] || { id, name: `Service ${id}`, price: 0 });
-        const totalPrice = draft.total_price || selectedServicesDetails.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
-        setPetDetails(pet);
-        setSelectedServicesDetails(selectedServicesDetails);
-        setBookingSummary({
-          pet,
-          services: selectedServicesDetails,
-          appointment: {
-            date: draft.date ? new Date(draft.date).toLocaleDateString() : '',
-            time: draft.time_slot,
-            address: draft.address,
-            additionalInfo: draft.additional_info,
-            issueDescription: draft.notes,
-          },
-          totalPrice,
-        });
-        setIsLoading(false);
-      } catch (err) {
-        setError('Failed to load booking details. Please try again.');
-        setIsLoading(false);
-      }
-    };
-    fetchDraftAppointment();
-  }, [user, hasMounted]);
+    if (!draftAppointment) return;
 
-  const handlePayment = async () => {
-    if (!draftId || !bookingSummary) {
-      console.error("Cannot proceed with payment: missing draft ID or booking summary");
-      setError("Unable to process your booking. Please try again.");
+    // Validate all required fields are present
+    if (!draftAppointment.pet_id || !draftAppointment.services || !draftAppointment.date || !draftAppointment.time_slot || !draftAppointment.address) {
+      setError('Required booking information is missing. Please review the previous steps.');
       return;
     }
+
+    // Format services
+    const draftServices = Array.isArray(draftAppointment.services)
+      ? draftAppointment.services
+      : typeof draftAppointment.services === 'string'
+      ? JSON.parse(draftAppointment.services)
+      : [];
+
+    const serviceMap = {
+      '1': { id: '1', name: 'After hours home visit', price: 299 },
+      '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
+    };
+
+    const selectedServicesDetails = draftServices.map(
+      (id: string) => serviceMap[id as keyof typeof serviceMap] || { id, name: `Service ${id}`, price: 0 }
+    );
+
+    const totalPrice = draftAppointment.total_price || selectedServicesDetails.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
+
+    setBookingSummary({
+      services: selectedServicesDetails,
+      appointment: {
+        date: draftAppointment.date ? new Date(draftAppointment.date).toLocaleDateString() : '',
+        time: draftAppointment.time_slot,
+        address: draftAppointment.address,
+        additionalInfo: draftAppointment.additional_info,
+        issueDescription: draftAppointment.notes,
+      },
+      totalPrice,
+    });
+  }, [draftAppointment]);
+
+  const handlePayment = async () => {
+    if (!draftAppointment?.id || !bookingSummary) {
+      console.error('Cannot proceed with payment: missing draft ID or booking summary');
+      setError('Unable to process your booking. Please try again.');
+      return;
+    }
+
     setIsProcessingPayment(true);
     setError(null);
+
     try {
-      console.log("Creating checkout session for appointment:", draftId);
+      console.log('Creating checkout session for appointment:', draftAppointment.id);
       const paymentDetails = {
-        appointmentId: draftId,
+        appointmentId: draftAppointment.id,
         amount: bookingSummary.totalPrice,
-        petName: bookingSummary.pet?.name || "Unknown Pet",
-        serviceNames: bookingSummary.services.map((s: any) => s.name).join(", "),
+        petName: bookingSummary.pet?.name || 'Unknown Pet',
+        serviceNames: bookingSummary.services.map((s: any) => s.name).join(', '),
         appointmentDate: bookingSummary.appointment.date,
       };
-      console.log("Payment details:", paymentDetails);
+
+      console.log('Payment details:', paymentDetails);
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -221,30 +164,35 @@ export default function PaymentPage() {
         },
         body: JSON.stringify(paymentDetails),
       });
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Error creating checkout session:", {
+        console.error('Error creating checkout session:', {
           status: response.status,
           statusText: response.statusText,
-          errorText
+          errorText,
         });
         setError(`Failed to create checkout session (${response.status}). Please try again.`);
         setIsProcessingPayment(false);
         return;
       }
+
       const { sessionId } = await response.json();
-      console.log("Got Stripe session ID:", sessionId);
+      console.log('Got Stripe session ID:', sessionId);
       const stripe = await stripePromise;
+
       if (!stripe) {
-        console.error("Stripe failed to initialize");
+        console.error('Stripe failed to initialize');
         setError('Payment system unavailable. Please try again later.');
         setIsProcessingPayment(false);
         return;
       }
-      console.log("Redirecting to Stripe checkout...");
+
+      console.log('Redirecting to Stripe checkout...');
       const { error } = await stripe.redirectToCheckout({ sessionId });
+
       if (error) {
-        console.error("Stripe redirect error:", error);
+        console.error('Stripe redirect error:', error);
         setError(`Payment error: ${error.message}`);
         setIsProcessingPayment(false);
       }
@@ -255,25 +203,22 @@ export default function PaymentPage() {
     }
   };
 
-  const SummaryItem = ({ icon, label, value }: { icon: ReactNode, label: string, value?: string | number | null }) => (
-    <div className="flex items-start">
-      <span className="mr-2 mt-1 text-teal-600">{icon}</span>
-      <div>
-        <p className="font-medium text-gray-700">{label}</p>
-        {value && <p className="text-gray-600">{value}</p>}
+  if (isLoadingDraft) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="text-center p-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading booking details...</p>
+        </div>
       </div>
-    </div>
-  );
-
-  if (isLoading) {
-    return <div className="flex justify-center items-center h-screen">Loading booking details...</div>;
+    );
   }
 
-  if (error) {
-    return <ErrorDisplay error={error} onRetry={() => window.location.reload()} />;
+  if (error || draftError) {
+    return <ErrorDisplay error={error || draftError?.message || 'An error occurred'} onRetry={() => window.location.reload()} />;
   }
 
-  if (missingData) {
+  if (!bookingSummary) {
     return (
       <div className="max-w-3xl mx-auto mt-12 bg-white p-8 rounded-lg border text-center">
         <div className="mb-6">
@@ -283,22 +228,12 @@ export default function PaymentPage() {
         </div>
         <h2 className="text-xl font-semibold mb-4">Booking Incomplete</h2>
         <p className="mb-6">Required booking information is missing. Please review the previous steps.</p>
-        <Button 
-          asChild 
-          className="bg-[#4e968f] hover:bg-[#43847e]"
-          onClick={() => router.push('/book')}
-        >
+        <Button asChild className="bg-[#4e968f] hover:bg-[#43847e]" onClick={() => router.push('/book')}>
           <Link href="/book">Start Over</Link>
         </Button>
       </div>
     );
   }
-
-  if (!bookingSummary) {
-    return <div className="flex justify-center items-center h-screen">Loading booking summary...</div>;
-  }
-
-  const formattedDate = bookingSummary?.appointment?.date || "Not set";
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -317,78 +252,39 @@ export default function PaymentPage() {
           <h1 className="text-3xl font-bold text-center mb-2">Confirm & Pay</h1>
           <p className="text-center text-gray-600 mb-8">Review your appointment details and complete your booking.</p>
 
-          <div className="bg-white p-6 sm:p-8 rounded-lg border">
-            <h2 className="text-2xl font-semibold mb-6 text-gray-800 border-b pb-4">Booking Summary</h2>
-            <div className="flex items-center gap-4 pb-6 mb-6 border-b">
-              {petDetails && petDetails.image ? (
-                <Image
-                  src={petDetails.image}
-                  alt={petDetails.name}
-                  width={64}
-                  height={64}
-                  className="w-16 h-16 rounded-full object-cover border"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm flex-shrink-0">
-                  No Img
-                </div>
-              )}
-              <div>
-                <h3 className="font-semibold text-xl text-gray-700">{petDetails?.name}</h3>
-                {petDetails?.species && <p className="text-gray-500">{petDetails.species}{petDetails.breed ? ` (${petDetails.breed})` : ''}</p>}
-              </div>
-            </div>
-
+          <div className="bg-white rounded-lg border p-6 mb-8">
             <div className="space-y-4 mb-6 pb-6 border-b">
               <h4 className="font-medium text-lg text-gray-700 mb-2 flex items-center">
                 <Check className="h-5 w-5 text-teal-600 mr-2 flex-shrink-0" /> Selected Services
               </h4>
-              {selectedServicesDetails.map(service => (
+              {bookingSummary.services.map((service: any) => (
                 <div key={service.id} className="flex justify-between items-center ml-7">
                   <span className="text-gray-600">{service.name}</span>
                   <span className="font-medium text-gray-700">${service.price.toFixed(2)}</span>
                 </div>
               ))}
-              {bookingSummary?.notes && (
+              {bookingSummary.appointment.issueDescription && (
                 <div className="ml-7 pt-2">
                   <p className="text-sm font-medium text-gray-600">Issue Description:</p>
-                  <p className="text-sm text-gray-500 whitespace-pre-wrap">{bookingSummary.notes}</p>
+                  <p className="text-sm text-gray-500 whitespace-pre-wrap">{bookingSummary.appointment.issueDescription}</p>
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 pb-6 border-b">
-              <div className="flex items-start">
-                <span className="mr-2 mt-1 text-teal-600"><Calendar size={20}/></span>
-                <div>
-                  <p className="font-medium text-gray-700">Date</p>
-                  <p className="text-gray-600">{bookingSummary?.appointment?.date || "Not set"}</p>
-                </div>
-              </div>
-              <div className="flex items-start">
-                <span className="mr-2 mt-1 text-teal-600"><Clock size={20}/></span>
-                <div>
-                  <p className="font-medium text-gray-700">Time</p>
-                  <p className="text-gray-600">{bookingSummary?.appointment?.time}</p>
-                </div>
-              </div>
-              <div className="md:col-span-2 flex items-start">
-                <span className="mr-2 mt-1 text-teal-600"><MapPin size={20}/></span>
-                <div>
-                  <p className="font-medium text-gray-700">Address</p>
-                  <p className="text-gray-600">{bookingSummary?.appointment?.address}</p>
-                  {bookingSummary?.appointment?.additionalInfo && (
-                    <p className="text-gray-500 text-sm mt-1">{bookingSummary.appointment.additionalInfo}</p>
-                  )}
-                </div>
+              <SummaryItem icon={<Calendar size={20} />} label="Date" value={bookingSummary.appointment.date} />
+              <SummaryItem icon={<Clock size={20} />} label="Time" value={bookingSummary.appointment.time} />
+              <div className="md:col-span-2">
+                <SummaryItem icon={<MapPin size={20} />} label="Address" value={bookingSummary.appointment.address} />
+                {bookingSummary.appointment.additionalInfo && (
+                  <p className="text-gray-500 text-sm mt-1 ml-7">{bookingSummary.appointment.additionalInfo}</p>
+                )}
               </div>
             </div>
 
             <div className="flex justify-between items-center py-4">
               <span className="text-xl font-semibold text-gray-800">Total Amount</span>
-              <span className="text-2xl font-bold text-teal-600">
-                ${(bookingSummary?.totalPrice || 0).toFixed(2)}
-              </span>
+              <span className="text-2xl font-bold text-teal-600">${(bookingSummary.totalPrice || 0).toFixed(2)}</span>
             </div>
           </div>
 
@@ -401,13 +297,30 @@ export default function PaymentPage() {
             </Button>
             <Button
               onClick={handlePayment}
-              disabled={isProcessingPayment || isLoading || !bookingSummary || !!error}
+              disabled={isProcessingPayment || isLoadingDraft || !bookingSummary || !!error}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] text-white px-8 py-3 rounded-lg transition duration-150 ease-in-out flex items-center gap-2 text-base"
             >
               {isProcessingPayment ? (
-                <><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...</>
+                <>
+                  <svg
+                    className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Processing...
+                </>
               ) : (
-                <><CreditCard className="h-5 w-5 mr-2" /> Proceed to Secure Payment</>
+                <>
+                  <CreditCard className="h-5 w-5 mr-2" /> Proceed to Secure Payment
+                </>
               )}
             </Button>
           </div>

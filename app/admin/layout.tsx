@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
 import { Button } from "@/components/ui/button"
 import { 
-  Users, UserCog, LogOut, Home, Menu, X
+  Users, UserCog, LogOut, Home, Menu, X, UserPlus 
 } from "lucide-react"
 import { getUserRole } from "@/lib/auth"
 import { toast } from "@/components/ui/use-toast"
@@ -118,6 +118,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 >
                   <Users className="h-5 w-5 mr-3" />
                   User Management
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/admin/vet-applications"
+                  className="flex items-center px-4 py-2 text-gray-700 hover:bg-teal-50 hover:text-teal-700 rounded-md"
+                >
+                  <UserPlus className="h-5 w-5 mr-3" />
+                  Vet Applications
                 </Link>
               </li>
             </ul>
