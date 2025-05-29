@@ -1,81 +1,97 @@
 import nodemailer from 'nodemailer';
 
-// Configure email transporter
+// Create reusable transporter object using SMTP transport
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT || '587'),
-  secure: process.env.EMAIL_SECURE === 'true',
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   },
 });
 
-// Standard email templates
+export const sendEmail = async (to: string, subject: string, html: string) => {
+  const mailOptions = {
+    from: process.env.SMTP_FROM || 'MobiPet <noreply@mobipet.com.au>',
+    to,
+    subject,
+    html,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
 export const emailTemplates = {
-  appointmentAccepted: (petOwnerName: string, petName: string, date: string, time: string) => ({
-    subject: `Your appointment for ${petName} has been accepted`,
+  appointmentAccepted: (
+    petOwnerName: string,
+    petName: string,
+    appointmentDate: string,
+    appointmentTime: string
+  ) => ({
+    subject: 'MobiPet: Your Appointment Has Been Confirmed',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #4e968f; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">MobiPet</h1>
+        <h2 style="color: #4CAF50;">Appointment Confirmed!</h2>
+        <p>Dear ${petOwnerName},</p>
+        <p>Your appointment for ${petName} has been confirmed by the veterinarian.</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Date:</strong> ${appointmentDate}</p>
+          <p><strong>Time:</strong> ${appointmentTime}</p>
         </div>
-        <div style="padding: 20px; border: 1px solid #e0e0e0; border-top: none;">
-          <p>Hello ${petOwnerName},</p>
-          <p>Good news! Your appointment for ${petName} has been accepted by our veterinarian.</p>
-          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Date:</strong> ${date}</p>
-            <p style="margin: 5px 0;"><strong>Time:</strong> ${time}</p>
-          </div>
-          <p>The veterinarian will arrive at your location during the scheduled time slot. Please ensure your pet is available and ready for the appointment.</p>
-          <p>You can view more details and communicate with the vet through your MobiPet account.</p>
-          <div style="text-align: center; margin-top: 20px;">
-            <a href="${process.env.NEXT_PUBLIC_BASE_URL}/portal/bookings" style="background-color: #4e968f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
-              View Appointment
-            </a>
-          </div>
-          <p style="margin-top: 20px;">If you need to make any changes, please do so as soon as possible through your account or by contacting us.</p>
-          <p>Thank you for choosing MobiPet for your pet's healthcare needs.</p>
-          <p>Best regards,<br>The MobiPet Team</p>
-        </div>
-        <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
-          © ${new Date().getFullYear()} MobiPet. All rights reserved.
-        </div>
+        <p>You can view the full details of your appointment by logging into your MobiPet account.</p>
+        <p>Best regards,<br>The MobiPet Team</p>
       </div>
     `,
   }),
 
-  timeProposed: (petOwnerName: string, petName: string, oldDate: string, oldTime: string, newDate: string, newTime: string, message?: string) => ({
-    subject: `New time proposed for your appointment with ${petName}`,
+  appointmentDeclined: (
+    petOwnerName: string,
+    petName: string,
+    appointmentDate: string,
+    appointmentTime: string,
+    declinedBy: string,
+    reason: string
+  ) => ({
+    subject: 'MobiPet: Your Appointment Has Been Declined',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #4e968f; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">MobiPet</h1>
+        <h2 style="color: #f44336;">Appointment Declined</h2>
+        <p>Dear ${petOwnerName},</p>
+        <p>We regret to inform you that your appointment for ${petName} has been declined by the ${declinedBy}.</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Date:</strong> ${appointmentDate}</p>
+          <p><strong>Time:</strong> ${appointmentTime}</p>
+          <p><strong>Reason:</strong> ${reason}</p>
         </div>
-        <div style="padding: 20px; border: 1px solid #e0e0e0; border-top: none;">
-          <p>Hello ${petOwnerName},</p>
-          <p>Our veterinarian has proposed a new time for your appointment with ${petName}.</p>
-          <div style="background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;">
-            <h3 style="margin-top: 0; color: #856404;">Original Appointment</h3>
-            <p style="margin: 5px 0;"><strong>Date:</strong> ${oldDate}</p>
-            <p style="margin: 5px 0;"><strong>Time:</strong> ${oldTime}</p>
-            <h3 style="margin-top: 15px; color: #856404;">Proposed New Time</h3>
-            <p style="margin: 5px 0;"><strong>Date:</strong> ${newDate}</p>
-            <p style="margin: 5px 0;"><strong>Time:</strong> ${newTime}</p>
-            ${message ? `<p style="margin-top: 10px;"><strong>Message from Vet:</strong> ${message}</p>` : ''}
-          </div>
-          <p>Please log in to your MobiPet account to accept or decline this proposal.</p>
-          <div style="text-align: center; margin-top: 20px;">
-            <a href="${process.env.NEXT_PUBLIC_BASE_URL}/portal/bookings" style="background-color: #4e968f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
-              Respond to Proposal
-            </a>
-          </div>
-          <p style="margin-top: 20px;">If you have any questions, please don't hesitate to contact us.</p>
-          <p>Best regards,<br>The MobiPet Team</p>
+        <p>Please log in to your MobiPet account to book a new appointment.</p>
+        <p>Best regards,<br>The MobiPet Team</p>
+      </div>
+    `,
+  }),
+
+  timeProposed: (
+    petOwnerName: string,
+    petName: string,
+    originalDate: string,
+    originalTime: string,
+    proposedDate: string,
+    proposedTime: string,
+    message: string = 'No additional message provided'
+  ) => ({
+    subject: 'MobiPet: New Time Proposed for Your Appointment',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2196F3;">New Time Proposed</h2>
+        <p>Dear ${petOwnerName},</p>
+        <p>The veterinarian has proposed a new time for your appointment with ${petName}.</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Original Time:</strong> ${originalDate} at ${originalTime}</p>
+          <p><strong>Proposed Time:</strong> ${proposedDate} at ${proposedTime}</p>
+          <p><strong>Message from vet:</strong> ${message}</p>
         </div>
-        <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
-          © ${new Date().getFullYear()} MobiPet. All rights reserved.
-        </div>
+        <p>Please log in to your MobiPet account to accept or decline this proposal.</p>
+        <p>Best regards,<br>The MobiPet Team</p>
       </div>
     `,
   }),
@@ -178,54 +194,7 @@ export const emailTemplates = {
       </div>
     `,
   }),
-
-  appointmentDeclined: (petOwnerName: string, petName: string, date: string, time: string, vetName: string, message?: string) => ({
-    subject: `Your appointment for ${petName} has been declined`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #4e968f; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">MobiPet</h1>
-        </div>
-        <div style="padding: 20px; border: 1px solid #e0e0e0; border-top: none;">
-          <p>Hello ${petOwnerName},</p>
-          <p>We regret to inform you that your appointment for ${petName} on ${date} at ${time} has been declined by ${vetName}.</p>
-          ${message ? `<p><strong>Message from the vet:</strong> ${message}</p>` : ''}
-          <p>You can book another appointment or contact us for more information.</p>
-          <div style="text-align: center; margin-top: 20px;">
-            <a href="${process.env.NEXT_PUBLIC_BASE_URL}/book" style="background-color: #4e968f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
-              Book Another Appointment
-            </a>
-          </div>
-          <p style="margin-top: 20px;">We apologize for any inconvenience and thank you for choosing MobiPet.</p>
-          <p>Best regards,<br>The MobiPet Team</p>
-        </div>
-        <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
-          © ${new Date().getFullYear()} MobiPet. All rights reserved.
-        </div>
-      </div>
-    `,
-  }),
 };
-
-export async function sendEmail(
-  to: string, 
-  subject: string, 
-  html: string
-): Promise<void> {
-  const mailOptions = {
-    from: `"MobiPet" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-  } catch (error) {
-    console.error('Error sending email:', error);
-    throw error;
-  }
-}
 
 // Helper functions to send specific email types
 export async function sendAppointmentAcceptedEmail(

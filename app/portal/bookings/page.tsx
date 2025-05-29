@@ -5,14 +5,17 @@ import { useAppointments } from '@/hooks/useAppointments';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, MapPin, AlertCircle, Check, X } from 'lucide-react';
 import { formatAppointmentDate } from '@/lib/utils';
 import Link from 'next/link';
+import { toast } from "@/components/ui/use-toast"
+import { useRouter } from "next/navigation"
 
 export default function BookingsPage() {
   const user = useUser();
   const { useUserAppointments } = useAppointments();
   const [retryCount, setRetryCount] = useState(0);
+  const router = useRouter();
   
   const { data: appointments, isLoading, error, refetch } = useUserAppointments(user?.id ?? '');
 
@@ -93,6 +96,124 @@ export default function BookingsPage() {
     );
   }
 
+  // Add a helper function to render status-specific messages
+  const renderStatusMessage = (appointment: any) => {
+    switch (appointment.status) {
+      case 'waiting_for_vet':
+        return (
+          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md mt-2">
+            <p className="text-sm text-yellow-800">
+              <AlertCircle className="inline h-4 w-4 mr-1" />
+              Waiting for a vet to accept your appointment
+            </p>
+          </div>
+        );
+      case 'time_proposed':
+        return (
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded-md mt-2">
+            <p className="text-sm text-blue-800 font-medium">
+              The vet has proposed a new time:
+            </p>
+            <p className="text-sm text-blue-700 mt-1">
+              {appointment.proposed_time}
+            </p>
+            {appointment.proposed_message && (
+              <p className="text-sm text-blue-600 mt-1">
+                Message: {appointment.proposed_message}
+              </p>
+            )}
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" onClick={() => handleAcceptProposal(appointment.id)}>
+                Accept
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleDeclineProposal(appointment.id)}>
+                Decline
+              </Button>
+            </div>
+          </div>
+        );
+      case 'confirmed':
+        return (
+          <div className="bg-green-50 border border-green-200 p-3 rounded-md mt-2">
+            <p className="text-sm text-green-800">
+              <Check className="inline h-4 w-4 mr-1" />
+              Appointment confirmed by vet
+            </p>
+          </div>
+        );
+      case 'declined':
+        return (
+          <div className="bg-red-50 border border-red-200 p-3 rounded-md mt-2">
+            <p className="text-sm text-red-800">
+              <X className="inline h-4 w-4 mr-1" />
+              Appointment declined by vet
+            </p>
+            <Button size="sm" className="mt-2" onClick={() => router.push('/book')}>
+              Book New Appointment
+            </Button>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const handleAcceptProposal = async (appointmentId: string) => {
+    try {
+      const response = await fetch('/api/appointments/owner-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId,
+          action: 'accept_proposal',
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to accept proposal');
+      
+      toast({
+        title: "Success",
+        description: "New time accepted",
+      });
+      
+      refetch(); // Refresh appointments
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to accept proposal",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeclineProposal = async (appointmentId: string) => {
+    try {
+      const response = await fetch('/api/appointments/owner-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId,
+          action: 'decline_proposal',
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to decline proposal');
+      
+      toast({
+        title: "Proposal declined",
+        description: "The appointment has been cancelled",
+      });
+      
+      refetch();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to decline proposal",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-8">
@@ -109,7 +230,14 @@ export default function BookingsPage() {
               <CardHeader>
                 <CardTitle>Appointment for {appointment.pets?.name}</CardTitle>
                 <CardDescription>
-                  Status: <span className="capitalize">{appointment.status}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="capitalize">{appointment.status.replace('_', ' ')}</span>
+                    {appointment.services && Array.isArray(appointment.services) && appointment.services.length > 0 && (
+                      <span className="text-gray-500">
+                        • {appointment.services.map((s: any) => s.name || s).join(', ')}
+                      </span>
+                    )}
+                  </div>
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -120,7 +248,7 @@ export default function BookingsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-gray-500" />
-                    <span>{appointment.time_slot}</span>
+                    <span>{appointment.time_slot || 'Time not set'}</span>
                   </div>
                   {appointment.address && (
                     <div className="flex items-center gap-2">
@@ -129,6 +257,7 @@ export default function BookingsPage() {
                     </div>
                   )}
                 </div>
+                {renderStatusMessage(appointment)}
               </CardContent>
             </Card>
           ))}

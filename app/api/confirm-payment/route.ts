@@ -75,15 +75,15 @@ export async function POST(req: NextRequest) {
     const paymentIntentId = typeof paymentIntent === 'string' ? paymentIntent : paymentIntent?.id;
 
     const { data: updatedAppointment, error: updateError } = await supabaseAdmin
-      .from('appointments') // Or your final 'appointments' table
+      .from('appointments')
       .update({
-        status: 'confirmed', // Your final success status
+        status: 'waiting_for_vet', // Changed from 'confirmed'
         stripe_checkout_session_id: stripeSession.id,
         stripe_payment_intent_id: paymentIntentId || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', urlAppointmentId)
-      .select('id, status') // Select fields to return
+      .select('id, status')
       .single();
 
     if (updateError) {

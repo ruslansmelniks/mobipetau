@@ -2,57 +2,231 @@
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { Calendar, Clock, MapPin, Check, X, Clock4 } from "lucide-react"
+import { Calendar, Clock, MapPin, Check, X, Clock4, RefreshCw, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
 import { getStatusLabel } from "@/lib/appointment-statuses"
+import { toast } from "@/components/ui/use-toast"
+import { Textarea } from "@/components/ui/textarea"
+import { ErrorBoundary } from "@/components/error-boundary"
 
 export default function VetJobsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const [proposedTimes, setProposedTimes] = useState<Record<string, string>>({})
+  const [proposedMessages, setProposedMessages] = useState<Record<string, string>>({})
+  const [newJobCount, setNewJobCount] = useState(0)
+  const [previousJobIds, setPreviousJobIds] = useState<Set<string>>(new Set())
+  const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'proposed'>('all')
+  const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
   const user = useUser()
   const supabase = useSupabaseClient()
 
+  const fetchAvailableJobs = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select(`
+          *,
+          pets:pet_id (*),
+          pet_owner:pet_owner_id (
+            id,
+            email,
+            first_name,
+            last_name,
+            phone
+          )
+        `)
+        .in("status", ["waiting_for_vet", "confirmed"])
+        .order("created_at", { ascending: false });
+        
+      if (error) {
+        console.error("Error fetching jobs:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch available jobs",
+          variant: "destructive",
+        });
+        setJobs([]);
+      } else {
+        const newJobs = data || [];
+        setJobs(newJobs);
+        
+        // Check for new jobs
+        const currentJobIds = new Set(newJobs.map(job => job.id));
+        let newCount = 0;
+        currentJobIds.forEach(id => {
+          if (!previousJobIds.has(id)) {
+            newCount++;
+          }
+        });
+        
+        if (newCount > 0 && previousJobIds.size > 0) {
+          toast({
+            title: "New Job Available!",
+            description: `${newCount} new ${newCount === 1 ? 'job' : 'jobs'} available`,
+          });
+        }
+        
+        setPreviousJobIds(currentJobIds);
+        setNewJobCount(newCount);
+      }
+    } catch (err) {
+      console.error("Error in fetchAvailableJobs:", err);
+      setJobs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
-    const fetchAvailableJobs = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("appointments")
-          .select(`*, pets:pet_id (*), pet_owner:pet_owner_id (*)`)
-          .eq("status", "waiting_for_vet")
-          .order("created_at", { ascending: false });
-        if (error) {
-          setJobs([]);
-        } else {
-          setJobs(data || []);
-        }
-      } catch (err) {
-        setJobs([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchAvailableJobs();
+
+    // Add auto-refresh every 30 seconds for new jobs
+    const interval = setInterval(() => {
+      fetchAvailableJobs();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
   }, [user, supabase]);
 
   const handleAcceptJob = async (jobId: string) => {
-    // TODO: Implement accept logic
-    alert(`Accept job ${jobId}`);
+    setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
+    try {
+      const response = await fetch('/api/appointments/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: jobId,
+          action: 'accept',
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to accept job');
+      }
+
+      toast({
+        title: "Success",
+        description: "Job accepted successfully",
+      });
+      
+      await fetchAvailableJobs();
+    } catch (error: any) {
+      console.error("Error accepting job:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to accept job",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
+    }
   };
 
-  const handleDeclineJob = async (jobId: string) => {
-    // TODO: Implement decline logic
-    alert(`Decline job ${jobId}`);
+  const handleDeclineJob = async (jobId: string, message?: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/appointments/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: jobId,
+          action: 'decline',
+          message: message || 'Vet declined the appointment',
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to decline job');
+      }
+
+      toast({
+        title: "Success",
+        description: "Job declined successfully",
+      });
+      
+      await fetchAvailableJobs();
+    } catch (error: any) {
+      console.error("Error declining job:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to decline job",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleProposeTime = async (jobId: string) => {
-    // TODO: Implement propose time logic
-    alert(`Propose new time for job ${jobId}`);
+  const handleProposeTime = async (jobId: string, proposedTime: string, message?: string) => {
+    if (!proposedTime) {
+      toast({
+        title: "Error",
+        description: "Please enter a proposed time",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/appointments/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: jobId,
+          action: 'propose',
+          proposedTime,
+          message: message || `Vet proposed a new time: ${proposedTime}`,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to propose new time');
+      }
+
+      toast({
+        title: "Success",
+        description: "New time proposed successfully",
+      });
+      
+      await fetchAvailableJobs();
+      setProposedTimes({}); // Clear proposed times
+    } catch (error: any) {
+      console.error("Error proposing time:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to propose new time",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Filter jobs before rendering
+  const filteredJobs = jobs.filter(job => {
+    if (statusFilter === 'new') return job.status === 'waiting_for_vet';
+    if (statusFilter === 'proposed') return job.status === 'time_proposed';
+    return true;
+  });
 
   const renderJobCard = (job: any) => {
     const status = getStatusLabel(job.status);
@@ -118,7 +292,7 @@ export default function VetJobsPage() {
           <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeclineJob(job.id)}>
             <X className="mr-2 h-4 w-4" /> Decline
           </Button>
-          <Button variant="outline" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleProposeTime(job.id)}>
+          <Button variant="outline" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleProposeTime(job.id, proposedTimes[job.id] || "")}>
             <Clock4 className="mr-2 h-4 w-4" /> Propose New Time
           </Button>
           <Button className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]" onClick={() => handleAcceptJob(job.id)}>
@@ -130,31 +304,53 @@ export default function VetJobsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Incoming Jobs</h1>
-        <div className="relative w-full md:w-64">
-          <Input
-            placeholder="Search jobs"
-            className="pl-9"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <ErrorBoundary>
+      <div className="max-w-4xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            Incoming Jobs
+            {newJobCount > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {newJobCount} new
+              </Badge>
+            )}
+          </h1>
+          <div className="flex gap-4">
+            <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Jobs</SelectItem>
+                <SelectItem value="new">New Jobs Only</SelectItem>
+                <SelectItem value="proposed">Awaiting Response</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={fetchAvailableJobs}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
+
+        {loading ? (
+          <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading available jobs...</p>
+          </div>
+        ) : filteredJobs.length > 0 ? (
+          filteredJobs.map(renderJobCard)
+        ) : (
+          <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
+            <h2 className="text-xl font-semibold mb-2">No jobs available</h2>
+            <p className="text-gray-600 mb-6">There are currently no new appointments waiting for a vet. Check back later!</p>
+          </div>
+        )}
       </div>
-      {loading ? (
-        <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading available jobs...</p>
-        </div>
-      ) : jobs.length > 0 ? (
-        jobs.map(renderJobCard)
-      ) : (
-        <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
-          <h2 className="text-xl font-semibold mb-2">No jobs available</h2>
-          <p className="text-gray-600 mb-6">There are currently no new appointments waiting for a vet. Check back later!</p>
-        </div>
-      )}
-    </div>
+    </ErrorBoundary>
   );
 } 
