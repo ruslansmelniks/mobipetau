@@ -2,24 +2,32 @@ import nodemailer from 'nodemailer';
 
 // Create reusable transporter object using SMTP transport
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
+  host: process.env.EMAIL_HOST || 'smtp.resend.com',
+  port: parseInt(process.env.EMAIL_PORT || '587'),
+  secure: process.env.EMAIL_SECURE === 'true',
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: process.env.EMAIL_USER || 'resend',
+    pass: process.env.EMAIL_PASSWORD || process.env.RESEND_API_KEY,
   },
 });
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   const mailOptions = {
-    from: process.env.SMTP_FROM || 'MobiPet <noreply@mobipet.com.au>',
+    from: process.env.EMAIL_FROM || 'MobiPet <onboarding@resend.dev>',
     to,
     subject,
     html,
   };
 
-  return transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully:', info.messageId);
+    console.log(`Email sent: ${subject} to ${to} at ${new Date().toISOString()}`);
+    return info;
+  } catch (error) {
+    console.error('Email send error:', error);
+    throw error;
+  }
 };
 
 export const emailTemplates = {

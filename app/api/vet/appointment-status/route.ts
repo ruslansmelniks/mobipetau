@@ -63,27 +63,35 @@ export async function POST(req: NextRequest) {
     if (action === 'accept') {
       updateData.status = 'in_progress';
       // Send accepted email
-      await sendAppointmentAcceptedEmail(
-        petOwnerEmail,
-        petOwnerName,
-        petName,
-        appointmentDate,
-        appointmentTime
-      );
-      emailSent = true;
+      try {
+        await sendAppointmentAcceptedEmail(
+          petOwnerEmail,
+          petOwnerName,
+          petName,
+          appointmentDate,
+          appointmentTime
+        );
+        emailSent = true;
+      } catch (emailError) {
+        console.error('Failed to send accepted email notification:', emailError);
+      }
     } else if (action === 'decline') {
       updateData.status = 'declined';
       // Send declined email
-      await sendAppointmentDeclinedEmail(
-        petOwnerEmail,
-        petOwnerName,
-        petName,
-        appointmentDate,
-        appointmentTime,
-        vetName,
-        message
-      );
-      emailSent = true;
+      try {
+        await sendAppointmentDeclinedEmail(
+          petOwnerEmail,
+          petOwnerName,
+          petName,
+          appointmentDate,
+          appointmentTime,
+          vetName,
+          message
+        );
+        emailSent = true;
+      } catch (emailError) {
+        console.error('Failed to send declined email notification:', emailError);
+      }
     } else if (action === 'propose') {
       if (!proposedDate || !proposedTime) {
         return NextResponse.json({ error: 'Proposed date and time are required for time proposal' }, { status: 400 });
@@ -93,17 +101,21 @@ export async function POST(req: NextRequest) {
       updateData.proposed_time = proposedTime;
       updateData.proposed_message = message || '';
       // Send time proposed email
-      await sendTimeProposedEmail(
-        petOwnerEmail,
-        petOwnerName,
-        petName,
-        appointmentDate,
-        appointmentTime,
-        proposedDate,
-        proposedTime,
-        message
-      );
-      emailSent = true;
+      try {
+        await sendTimeProposedEmail(
+          petOwnerEmail,
+          petOwnerName,
+          petName,
+          appointmentDate,
+          appointmentTime,
+          proposedDate,
+          proposedTime,
+          message
+        );
+        emailSent = true;
+      } catch (emailError) {
+        console.error('Failed to send time proposed email notification:', emailError);
+      }
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }

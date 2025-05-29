@@ -143,18 +143,21 @@ export async function POST(req: NextRequest) {
     `;
 
     // Send the email
-    await transporter.sendMail({
-      from: `"MobiPet" <${process.env.EMAIL_USER}>`,
-      to: recipient,
-      subject: `Veterinary Report for ${report.appointment.pet.name}`,
-      html,
-    });
-
-    logger.info('Report email sent successfully', { 
-      reportId, 
-      recipientType,
-      recipient 
-    }, req);
+    try {
+      await transporter.sendMail({
+        from: `"MobiPet" <${process.env.EMAIL_USER}>`,
+        to: recipient,
+        subject: `Veterinary Report for ${report.appointment.pet.name}`,
+        html,
+      });
+      logger.info('Report email sent successfully', { 
+        reportId, 
+        recipientType,
+        recipient 
+      }, req);
+    } catch (emailError) {
+      logger.error('Failed to send email notification:', emailError);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
