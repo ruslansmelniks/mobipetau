@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
 import { BookingWarning } from "@/components/booking-warning"
+import { useDraftAppointment } from '@/hooks/useDraftAppointment'
 
 // Define types consistent with app/book/page.tsx
 type DraftAppointment = {
@@ -57,18 +58,15 @@ const services = [
 ];
 
 export default function SelectServices() {
-  const [draftAppointment, setDraftAppointment] = useState<DraftAppointment | null>(null);
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
-  const [issueDescription, setIssueDescription] = useState("");
-  
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [issueDescription, setIssueDescription] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false); // For Next button loading state
-  
   const router = useRouter();
   const supabase = useSupabaseClient();
   const user = useUser();
+  const { draftAppointment, isLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment();
+  const [error, setError] = useState<string | null>(null);
 
   const calculateTotal = useCallback(() => {
     if (!allServices.length || !selectedServiceIds.length) return 0;
@@ -77,87 +75,25 @@ export default function SelectServices() {
       .reduce((total, service) => total + service.price, 0);
   }, [allServices, selectedServiceIds]);
 
-  const debug = true;
-
   useEffect(() => {
-    const fetchInitialData = async () => {
-      if (!user) {
-        const session = await supabase.auth.getSession();
-        if (!session.data.session) {
-          setError("No active session. Please log in.");
-          setIsLoading(false);
-          router.push("/login");
-          return;
-        }
-      }
-      setIsLoading(true);
-      setError(null);
-      try {
-        if (!user) {
-          setError("User session not found. Please log in again.");
-          setIsLoading(false);
-          router.push("/login");
-          return;
-        }
-        // Use new draft service
-        const draft = await getOrCreateDraft(supabase, user.id);
-        if (!draft || !draft.pet_id) {
-          setError("No booking in progress or pet not selected. Please start again.");
-          setIsLoading(false);
-          router.push('/book');
-          return;
-        }
-        setDraftAppointment(draft);
-        const draftServices = Array.isArray(draft.services) ? draft.services : (typeof draft.services === 'string' ? JSON.parse(draft.services) : []);
-        setSelectedServiceIds(draftServices);
-        setIssueDescription(draft.notes || "");
-        setAllServices(services);
-      } catch (e: any) {
-        setError(`An unexpected error occurred: ${e.message}`);
-      }
-      setIsLoading(false);
-    };
-    if (user) {
-      fetchInitialData();
-    } else {
-      const checkSessionAndFetch = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          fetchInitialData();
-        } else if (!isLoading) {
-            setError("Authenticating... please wait or try logging in.");
-        }
-      };
-      checkSessionAndFetch();
+    if (!user) return;
+    setAllServices(services);
+    if (draftAppointment) {
+      const draftServices = Array.isArray(draftAppointment.services)
+        ? draftAppointment.services
+        : (typeof draftAppointment.services === 'string' ? JSON.parse(draftAppointment.services) : []);
+      setSelectedServiceIds(draftServices);
+      setIssueDescription(draftAppointment.notes || "");
     }
-  }, [user, router, supabase]);
-
-  const updateDraftInSupabase = async (updatedFields: Partial<DraftAppointment>) => {
-    if (!draftAppointment) {
-      setError("Cannot save: No booking in progress.");
-      return null;
-    }
-    setIsSaving(true);
-    setError(null);
-    try {
-      const newDraft = await updateDraft(supabase, draftAppointment.id, updatedFields);
-      setDraftAppointment(newDraft);
-      setIsSaving(false);
-      return newDraft;
-    } catch (updateError: any) {
-      setIsSaving(false);
-      setError(`Failed to save changes: ${updateError.message}. Please try again.`);
-      return null;
-    }
-  };
+  }, [user, draftAppointment]);
 
   const handleServiceToggle = async (serviceId: string) => {
     const newSelectedServiceIds = selectedServiceIds.includes(serviceId)
       ? selectedServiceIds.filter((id) => id !== serviceId)
       : [...selectedServiceIds, serviceId];
     setSelectedServiceIds(newSelectedServiceIds);
-    await updateDraftInSupabase({
-      services: newSelectedServiceIds, // Save to 'services' field
+    await updateDraftAppointment({
+      services: newSelectedServiceIds,
       total_price: calculateTotal(),
     });
   };
@@ -166,8 +102,8 @@ export default function SelectServices() {
     if (selectedServiceIds.length === 0 || !draftAppointment) return;
     setError(null);
     try {
-      setIsLoading(true);
-      await updateDraft(supabase, draftAppointment.id, {
+      setIsSaving(true);
+      await updateDraftAppointment({
         services: selectedServiceIds,
         notes: issueDescription,
         total_price: calculateTotal(),
@@ -175,44 +111,41 @@ export default function SelectServices() {
       router.push("/book/appointment");
     } catch (err: any) {
       setError('Error updating services. Please try again.');
-      console.error(err);
     }
-    setIsLoading(false);
+    setIsSaving(false);
   };
-  
-  // Simplified handleCancelBooking - assuming it might be removed if not part of this page's primary UX
-  // Or would need to be adapted like in app/book/page.tsx
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Please log in to continue booking</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <p>Loading services...</p> {/* Replace with a proper spinner/skeleton */}
+        <p>Loading services...</p>
       </div>
     );
   }
 
-  if (error && !isSaving) { // Don't show general error if a save operation is in progress and might set its own error
+  if (error || draftError) {
     return (
       <div className="container mx-auto max-w-md mt-8 text-center p-4">
-        <h2 className="text-xl font-semibold text-red-600 mb-2">An Error Occurred</h2>
-        <p className="mb-4">{error}</p>
-        <Button variant="default" onClick={() => router.push('/book')} className="mr-2">
-          Start Over
-        </Button>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          Try Again
-        </Button>
-      </div>
-    );
-  }
-  
-  if (!draftAppointment && !isLoading) { // Should be caught by redirect earlier, but as a fallback
-     return (
-      <div className="container mx-auto max-w-md mt-8 text-center p-4">
-        <h2 className="text-xl font-semibold text-yellow-600 mb-2">No active booking</h2>
-        <p className="mb-4">We couldn't find your current booking. Please start over.</p>
-        <Button variant="default" onClick={() => router.push('/book')}>
-          Back to Pet Selection
+        <h2 className="text-xl font-semibold text-red-600 mb-2">
+          An Error Occurred
+        </h2>
+        <p className="mb-4">{error || draftError}</p>
+        <Button
+          variant="default"
+          onClick={() => {
+            setError(null);
+            refetch();
+          }}
+        >
+          Retry
         </Button>
       </div>
     );
@@ -285,7 +218,6 @@ export default function SelectServices() {
               className="min-h-[120px] resize-y"
               value={issueDescription}
               onChange={(e) => setIssueDescription(e.target.value)}
-              // Consider adding onBlur or a separate save button for this if debouncing is too complex for now
             />
             <p className="text-sm text-gray-500 mt-2">
               The more information you provide, the better prepared our vet will be to help your pet.

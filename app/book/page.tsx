@@ -10,7 +10,7 @@ import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
-import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { useDraftAppointment } from '@/hooks/useDraftAppointment'
 import { BookingWarning } from "@/components/booking-warning"
 
 // Define a simple appointment type as per user request
@@ -37,73 +37,33 @@ export default function BookAppointment() {
   const router = useRouter();
   const supabase = useSupabaseClient();
   const [isCancelling, setIsCancelling] = useState(false);
-  const [draftAppointment, setDraftAppointment] = useState<DraftAppointment | null>(null);
-  const [isLoading, setIsLoading] = useState(true); 
+  const { draftAppointment, isLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment();
   const debug = true;
 
   useEffect(() => {
-    const fetchInitialData = async () => {
-      setIsLoading(true);
+    const fetchPets = async () => {
+      setPets([]);
+      setSelectedPet(null);
       setError(null);
-      setPets([]); // Reset pets before fetching
-      setSelectedPet(null); // Reset selected pet
-
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session) {
-        setError('No active session. Please log in.');
-        setIsLoading(false);
-        router.push('/login');
-        return;
-      }
-
-      const { user: currentSessionUser } = session; 
-      if (!currentSessionUser) {
-        setError('User not found. Please log in.');
-        setIsLoading(false);
-        router.push('/login');
-        return;
-      }
-      
-      // --- DEBUG USER ---
-      console.log("Current user:", currentSessionUser);
-      console.log("User ID being used in query:", currentSessionUser?.id);
-      // --- END DEBUG USER ---
-
-      // Fetch pets for the current user
+      if (!authUser) return;
       const { data: petData, error: petError } = await supabase
         .from('pets')
         .select('*')
-        .eq('owner_id', currentSessionUser.id);
-
+        .eq('owner_id', authUser.id);
       if (petError) {
-        console.error('Error fetching pets:', petError);
         setError('Failed to load your pets. Please try refreshing the page.');
       } else {
         setPets(petData || []);
       }
-      
-      try {
-        const draft = await getOrCreateDraft(supabase, currentSessionUser.id);
-        setDraftAppointment(draft);
-        if (draft.pet_id) setSelectedPet(draft.pet_id);
-      } catch (err: any) {
-        setError('Error initializing booking. Please try again.');
-        setDraftAppointment(null);
-      }
-      setIsLoading(false);
     };
+    fetchPets();
+  }, [authUser, supabase]);
 
-    fetchInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]); // supabase client is stable, router is from next/navigation
-
-  // Effect to set selectedPet when draftAppointment is loaded or changed
   useEffect(() => {
     if (draftAppointment && draftAppointment.pet_id) {
       setSelectedPet(draftAppointment.pet_id);
     } else {
-      setSelectedPet(null); // Ensure selectedPet is reset if draft has no pet_id
+      setSelectedPet(null);
     }
   }, [draftAppointment]);
 
@@ -112,13 +72,11 @@ export default function BookAppointment() {
       setError("Cannot select pet: No booking loaded. Please refresh.");
       return;
     }
-    setSelectedPet(petId); // Optimistic update for UI
+    setSelectedPet(petId);
     try {
-      const updatedDraft = await updateDraft(supabase, draftAppointment.id, { pet_id: petId });
-      setDraftAppointment(updatedDraft);
+      const updatedDraft = await updateDraftAppointment({ pet_id: petId });
       setError(null);
     } catch (updateError: any) {
-      console.error('Error updating draft appointment with pet_id:', updateError);
       setError(`Error saving pet selection: ${updateError.message}. Please try selecting again.`);
     }
   };
@@ -130,7 +88,7 @@ export default function BookAppointment() {
     }
     setError(null);
     try {
-      await updateDraft(supabase, draftAppointment.id, { pet_id: selectedPet });
+      await updateDraftAppointment({ pet_id: selectedPet });
       router.push("/book/services");
     } catch (err: any) {
       setError('Error updating pet selection. Please try again.');
@@ -143,25 +101,27 @@ export default function BookAppointment() {
       return;
     }
     if (!window.confirm('Are you sure you want to cancel this booking draft? This cannot be undone.')) return;
-    
     setIsCancelling(true);
     setError(null);
-
     const { error: deleteError } = await supabase
       .from('appointments')
       .delete()
       .eq('id', draftAppointment.id);
-    
     setIsCancelling(false);
-
     if (deleteError) {
-      console.error('Error cancelling draft appointment:', deleteError);
       setError(`Failed to cancel booking draft: ${deleteError.message}. Please try again.`);
       return;
     }
-    // Successfully cancelled
     router.replace('/portal/bookings');
   };
+
+  if (!authUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Please log in to continue booking</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -171,43 +131,21 @@ export default function BookAppointment() {
     );
   }
 
-  if (error) {
+  if (error || draftError) {
     return (
       <div className="container mx-auto max-w-md mt-8 text-center p-4">
         <h2 className="text-xl font-semibold text-red-600 mb-2">
           An Error Occurred
         </h2>
-        <p className="mb-4">{error}</p>
+        <p className="mb-4">{error || draftError}</p>
         <Button
           variant="default"
           onClick={() => {
-            setIsLoading(true); 
-            supabase.auth.getSession().then(({ data: { session } }) => {
-              if (session?.user) {
-                getOrCreateDraft(supabase, session.user.id).then((draft) => {
-                  setDraftAppointment(draft);
-                  setIsLoading(false);
-                }).catch((err) => {
-                  setError('Error initializing booking. Please try again.');
-                  setDraftAppointment(null);
-                  setIsLoading(false);
-                });
-              } else {
-                setError('Session expired or user not found. Please log in again.');
-                setIsLoading(false);
-                router.push('/login');
-              }
-            });
+            setError(null);
+            refetch();
           }}
-          className="mr-2"
         >
-          Try Again
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => router.push('/portal/bookings')}
-        >
-          Go to My Bookings
+          Retry
         </Button>
       </div>
     );
@@ -215,37 +153,8 @@ export default function BookAppointment() {
 
   if (!draftAppointment) {
     return (
-      <div className="container mx-auto max-w-md mt-8 text-center p-4">
-        <h2 className="text-xl font-semibold mb-2">
-          No Draft Appointment Found
-        </h2>
-        <p className="mb-4">
-          We couldn't find an existing draft appointment for you. A new one is being prepared.
-        </p>
-        <Button
-          variant="default"
-          onClick={() => {
-            setIsLoading(true);
-             supabase.auth.getSession().then(({ data: { session } }) => {
-              if (session?.user) {
-                getOrCreateDraft(supabase, session.user.id).then((draft) => {
-                  setDraftAppointment(draft);
-                  setIsLoading(false);
-                }).catch((err) => {
-                  setError('Error initializing booking. Please try again.');
-                  setDraftAppointment(null);
-                  setIsLoading(false);
-                });
-              } else {
-                setError('Session expired or user not found. Please log in again.');
-                setIsLoading(false);
-                router.push('/login');
-              }
-            });
-          }}
-        >
-          Load Draft
-        </Button>
+      <div className="flex justify-center items-center h-screen">
+        <p>Loading...</p>
       </div>
     );
   }

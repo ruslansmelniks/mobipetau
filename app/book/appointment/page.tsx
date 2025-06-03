@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
+import { useDraftAppointment } from '@/hooks/useDraftAppointment'
 import { BookingWarning } from "@/components/booking-warning"
 import { useAppointmentBooking } from '@/hooks/useAppointmentBooking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -147,29 +147,23 @@ export default function AppointmentDetails() {
   const supabase = useSupabaseClient()
   const { isLoading: sessionLoading } = useSessionContext()
   const user = useUser()
-  const {
-    draftAppointment,
-    isLoadingDraft,
-    error,
-    updateAddress,
-    updateDateTime,
-    updateAdditionalInfo,
-    isUpdating,
-  } = useAppointmentBooking()
+  const { draftAppointment, isLoading: draftLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment()
 
-  // Form state
-  const [address, setAddress] = useState(draftAppointment?.address || '')
-  const [additionalInfo, setAdditionalInfo] = useState(draftAppointment?.additional_info || '')
-  const [date, setDate] = useState<Date | undefined>(
-    draftAppointment?.date ? new Date(draftAppointment.date) : undefined
-  )
+  // Form state with proper initial values
+  const [address, setAddress] = useState<string>(draftAppointment?.address || '')
+  const [additionalInfo, setAdditionalInfo] = useState<string>(draftAppointment?.additional_info || '')
+  const [date, setDate] = useState<Date | undefined>(() => {
+    if (!draftAppointment?.date) return undefined;
+    const parsedDate = new Date(draftAppointment.date);
+    return !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
+  });
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening'>(
     draftAppointment?.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning'
   )
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(
     draftAppointment?.time_slot || null
   )
-  const [isInPerth, setIsInPerth] = useState(draftAppointment?.is_in_perth ?? true)
+  const [isInPerth, setIsInPerth] = useState<boolean>(draftAppointment?.is_in_perth ?? true)
   const [addressLatLng, setAddressLatLng] = useState<{ lat: number; lng: number } | null>(
     draftAppointment?.latitude && draftAppointment?.longitude
       ? { lat: draftAppointment.latitude, lng: draftAppointment.longitude }
@@ -177,138 +171,78 @@ export default function AppointmentDetails() {
   )
   
   // UI state
-  const [loading, setLoading] = useState(true)
-  const [showPerthWarning, setShowPerthWarning] = useState(false)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [showPerthWarning, setShowPerthWarning] = useState<boolean>(false)
 
-  // Function to check if an address is in Perth
-  const checkIfInPerth = (addressStr: string) => {
-    addressStr = addressStr.toLowerCase();
-    
-    // Check if the address contains "perth" or any Perth suburb
-    const containsPerth = addressStr.includes("perth") || 
-                          addressStr.includes("wa") || 
-                          addressStr.includes("western australia");
-                          
-    const containsPerthSuburb = perthSuburbs.some(suburb => 
-      addressStr.includes(suburb.name.toLowerCase())
-    );
-    
-    const isInPerthArea = containsPerth || containsPerthSuburb;
-    
-    setIsInPerth(isInPerthArea);
-    setShowPerthWarning(!isInPerthArea);
-    
-    return isInPerthArea;
-  };
-
-  // Geocode address using OpenStreetMap Nominatim
-  const geocodeAddress = async (address: string) => {
-    if (!address.trim()) return;
-    try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
-      const data = await response.json();
-      if (data && data.length > 0) {
-        const { lat, lon } = data[0];
-        return { lat: parseFloat(lat), lng: parseFloat(lon) };
-      }
-      return null;
-    } catch (error) {
-      console.error("Geocoding error:", error);
-      return null;
-    }
-  };
-
-  const handleAddressChange = (val: string) => {
-    setAddress(val);
-    // Check if address is in Perth area
-    const isPerthAddress = checkIfInPerth(val);
-    setIsInPerth(isPerthAddress);
-    setShowPerthWarning(!isPerthAddress && val.length > 5);
-  };
-
-  const handlePlaceSelected = (place: google.maps.places.PlaceResult, latLng: { lat: number, lng: number }) => {
-    setAddressLatLng(latLng);
-    if (place.formatted_address) {
-      setAddress(place.formatted_address);
-      const isPerthAddress = checkIfInPerth(place.formatted_address);
-      setIsInPerth(isPerthAddress);
-      setShowPerthWarning(!isPerthAddress && place.formatted_address.length > 5);
-    }
-  };
-
-  // Load or create draft appointment
   useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    // Fetch existing draft appointment
-    const fetchDraftAppointment = async () => {
-      try {
-        const draft = await getOrCreateDraft(supabase, user.id);
-        setAddress(draft.address);
-        setAdditionalInfo(draft.additional_info);
-        setDate(new Date(draft.date));
-        setSelectedTimeSlot(draft.time_slot);
-        setTimeOfDay(draft.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning');
-        setAddressLatLng({ lat: draft.latitude, lng: draft.longitude });
-        setIsInPerth(draft.is_in_perth);
-      } catch (err: any) {
-        console.error('Failed to fetch booking information. Please try again.');
-      }
-      setLoading(false);
-    };
-    fetchDraftAppointment();
-  }, [user]);
+    if (draftAppointment) {
+      setAddress(draftAppointment.address || '')
+      setAdditionalInfo(draftAppointment.additional_info || '')
+      setDate(draftAppointment.date ? new Date(draftAppointment.date) : undefined)
+      setSelectedTimeSlot(draftAppointment.time_slot || null)
+      setTimeOfDay(draftAppointment.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning')
+      setAddressLatLng(
+        draftAppointment.latitude && draftAppointment.longitude
+          ? { lat: draftAppointment.latitude, lng: draftAppointment.longitude }
+          : null
+      )
+      setIsInPerth(draftAppointment.is_in_perth ?? true)
+    }
+    setLoading(false)
+  }, [draftAppointment])
 
-  // Save the appointment data and proceed
   const handleNext = async () => {
     if (!date || !selectedTimeSlot) {
       return;
     }
-
     try {
-      await updateDateTime(date, selectedTimeSlot, timeOfDay);
-      if (address && addressLatLng) {
-        await updateAddress(address, addressLatLng.lat, addressLatLng.lng, isInPerth);
-      }
-      if (additionalInfo) {
-        await updateAdditionalInfo(additionalInfo);
-      }
+      await updateDraftAppointment({
+        date: date.toISOString(),
+        time_slot: selectedTimeSlot,
+        time_of_day: timeOfDay,
+        address,
+        latitude: addressLatLng?.lat,
+        longitude: addressLatLng?.lng,
+        is_in_perth: isInPerth,
+        additional_info: additionalInfo,
+      });
       router.push('/book/payment');
     } catch (err) {
-      console.error('Error updating appointment:', err);
+      // error is handled by the hook
     }
   };
 
-  // Reset time slot when time of day changes
-  useEffect(() => {
-    setSelectedTimeSlot(null);
-  }, [timeOfDay]);
-
-  // Loading state
-  if (isLoadingDraft) {
+  if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading appointment details...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Please log in to continue booking</p>
       </div>
     );
   }
 
-  // Error state
-  if (error) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <p className="text-red-600">{error}</p>
-          <Button
-            className="mt-4"
-            onClick={() => router.refresh()}
-          >
-            Try Again
-          </Button>
-        </div>
+      <div className="flex justify-center items-center h-screen">
+        <p>Loading appointment details...</p>
+      </div>
+    );
+  }
+
+  if (draftError) {
+    return (
+      <div className="container mx-auto max-w-md mt-8 text-center p-4">
+        <h2 className="text-xl font-semibold text-red-600 mb-2">
+          An Error Occurred
+        </h2>
+        <p className="mb-4">{draftError}</p>
+        <Button
+          variant="default"
+          onClick={() => {
+            refetch();
+          }}
+        >
+          Retry
+        </Button>
       </div>
     );
   }
@@ -345,8 +279,16 @@ export default function AppointmentDetails() {
               </Label>
               <GoogleMapsAutocomplete
                 value={address}
-                onChange={handleAddressChange}
-                onPlaceSelected={handlePlaceSelected}
+                onChange={setAddress}
+                onPlaceSelected={(place, latLng) => {
+                  setAddressLatLng(latLng);
+                  if (place.formatted_address) {
+                    setAddress(place.formatted_address);
+                    const isPerthAddress = checkIfInPerth(place.formatted_address);
+                    setIsInPerth(isPerthAddress);
+                    setShowPerthWarning(!isPerthAddress && place.formatted_address.length > 5);
+                  }
+                }}
                 disabled={loading}
               />
               {showPerthWarning && (
@@ -362,7 +304,10 @@ export default function AppointmentDetails() {
                 id="additional-info"
                 placeholder="E.g., gate code, parking instructions, or landmarks to help the vet find your home"
                 value={additionalInfo}
-                onChange={(e) => setAdditionalInfo(e.target.value)}
+                onChange={(e) => {
+                  console.log('Additional info changed:', e.target.value);
+                  setAdditionalInfo(e.target.value);
+                }}
                 className="resize-none h-24"
               />
             </div>
@@ -380,7 +325,7 @@ export default function AppointmentDetails() {
                           `w-full flex items-center justify-between border rounded-md px-3 py-2 h-10 bg-white text-left text-base focus:outline-none focus:ring-2 focus:ring-teal-500 ${!date ? 'text-muted-foreground' : ''}`
                         }
                       >
-                        {date ? format(date, "dd/MM/yyyy") : <span>Select a date</span>}
+                        {date ? format(date, "dd/MM/yyyy") : "Select a date"}
                         <CalendarIcon className="ml-2 h-5 w-5 text-gray-400" />
                       </button>
                     </PopoverTrigger>
@@ -388,7 +333,10 @@ export default function AppointmentDetails() {
                       <Calendar
                         mode="single"
                         selected={date}
-                        onSelect={setDate}
+                        onSelect={(newDate) => {
+                          console.log('Date selected:', newDate);
+                          setDate(newDate);
+                        }}
                         disabled={(day) => day < new Date()}
                         initialFocus
                       />
@@ -465,10 +413,10 @@ export default function AppointmentDetails() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!date || !selectedTimeSlot || !address || isUpdating}
+              disabled={!date || !selectedTimeSlot || !address}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              {isUpdating ? "Saving..." : "Review details"}
+              {loading ? "Saving..." : "Review details"}
             </Button>
           </div>
         </div>
