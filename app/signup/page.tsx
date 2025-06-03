@@ -9,9 +9,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@supabase/supabase-js'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, Loader2 } from "lucide-react"
 
-export default function SignupPage() {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export default function SignUpPage() {
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [phone, setPhone] = useState("")
@@ -20,27 +28,29 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const [supabase] = useState(() => createPagesBrowserClient())
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    setError(null);
+    setIsLoading(true);
 
     if (!email || !password || !firstName || !lastName || !phone) {
       setError("Please fill in all required fields");
+      setIsLoading(false);
       return;
     }
 
     if (!agreeTerms) {
       setError("You must agree to the Terms of Service and Privacy Policy");
+      setIsLoading(false);
       return;
     }
 
     try {
-      setIsLoading(true);
-      // Real Supabase signup
+      console.log("Starting signup process...");
+      
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -51,35 +61,26 @@ export default function SignupPage() {
             phone: phone,
             role: "pet_owner", // Default role
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
       if (signUpError) {
-        console.error("Supabase Signup Error:", signUpError);
-        setError(signUpError.message || "Failed to create account. Please try again.");
-        return;
+        console.error("Signup error:", signUpError);
+        throw signUpError;
       }
-      
-      // Check if user object exists and if identities array is empty (means email likely already exists and is confirmed)
-      // Note: Supabase behavior for existing unconfirmed vs confirmed emails can vary based on project settings.
-      // This check might need adjustment based on your specific Supabase email confirmation settings.
-      if (data.user && data.user.identities && data.user.identities.length === 0) {
-         setError("This email address may already be in use. Please try logging in or use a different email.");
-         return;
-      }     
-      
-      // If signup is successful and a user object is returned (even if email confirmation is pending)
-      // redirect directly to dashboard. The middleware should handle session state.
-      // If email confirmation is ON and STRICTLY required before login, this redirect might lead
-      // to the user being bounced back to login by the middleware if the session isn't active yet.
-      // For a smoother UX with email confirmation, you might redirect to a page saying "Check your email".
-      // For now, per request, redirecting to dashboard:
-      console.log("Supabase signup successful, redirecting to /portal/bookings. User:", data.user);
-      router.push("/portal/bookings");
 
+      if (data.user) {
+        console.log("Supabase signup successful, redirecting to /portal/bookings. User:", data.user);
+        
+        // Add a small delay to ensure session is fully established
+        setTimeout(() => {
+          router.push("/portal/bookings");
+        }, 100);
+      }
     } catch (err: any) {
-      console.error("Signup error (catch block):", err);
-      setError(err.message || "An error occurred during registration. Please try again.");
+      console.error("Signup failed:", err);
+      setError(err.message || "Failed to sign up. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -91,7 +92,7 @@ export default function SignupPage() {
       <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
         <div className="flex items-center">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
+            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
           </Link>
         </div>
         <nav className="hidden md:flex items-center space-x-8">
@@ -128,7 +129,7 @@ export default function SignupPage() {
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-md flex flex-col items-center">
           <h1 className="text-3xl font-bold mb-2 text-center">Create your account</h1>
-          <p className="text-gray-600 mb-8 text-center">Sign up to get started with MobiPet</p>
+          <p className="text-gray-600 mb-8 text-center">Sign up to book appointments for your pets</p>
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm w-full">
@@ -146,6 +147,7 @@ export default function SignupPage() {
                 onChange={(e) => setFirstName(e.target.value)}
                 required
                 className="w-full"
+                disabled={isLoading}
               />
               <Input
                 id="lastName"
@@ -155,6 +157,7 @@ export default function SignupPage() {
                 onChange={(e) => setLastName(e.target.value)}
                 required
                 className="w-full"
+                disabled={isLoading}
               />
             </div>
             <Input
@@ -165,19 +168,18 @@ export default function SignupPage() {
               onChange={(e) => setPhone(e.target.value)}
               required
               className="w-full"
+              disabled={isLoading}
             />
-            <div>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full"
-              />
-            </div>
-
+            <Input
+              id="email"
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full"
+              disabled={isLoading}
+            />
             <div className="relative">
               <Input
                 id="password"
@@ -187,6 +189,7 @@ export default function SignupPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full"
+                disabled={isLoading}
               />
               <button
                 type="button"
@@ -197,13 +200,13 @@ export default function SignupPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-
             <div className="flex items-start">
               <Checkbox
                 id="terms"
                 checked={agreeTerms}
                 onCheckedChange={(checked) => setAgreeTerms(!!checked)}
                 className="mt-1"
+                disabled={isLoading}
               />
               <Label htmlFor="terms" className="ml-2 text-sm font-normal cursor-pointer">
                 I agree to the{" "}
@@ -216,20 +219,25 @@ export default function SignupPage() {
                 </Link>
               </Label>
             </div>
-
             <Button
               type="submit"
               className="w-full bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] h-11"
               disabled={isLoading}
             >
-              {isLoading ? "Creating account..." : "Create account"}
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Account...
+                </>
+              ) : (
+                "Sign up"
+              )}
             </Button>
-
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
                 Already have an account?{" "}
                 <Link href="/login" className="text-teal-600 hover:text-teal-700 font-medium">
-                  Log in
+                  Sign in
                 </Link>
               </p>
             </div>
@@ -242,7 +250,7 @@ export default function SignupPage() {
         <div className="container mx-auto px-4 max-w-[1400px]">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-4 md:mb-0">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
+              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
             </div>
             <div className="text-sm text-gray-500">© 2025 MobiPet. All rights reserved.</div>
           </div>
