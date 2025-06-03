@@ -1,276 +1,282 @@
 "use client"
 
-import { useUser } from '@supabase/auth-helpers-react';
-import { useAppointments } from '@/hooks/useAppointments';
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, AlertCircle, Check, X } from 'lucide-react';
-import { formatAppointmentDate } from '@/lib/utils';
-import Link from 'next/link';
-import { toast } from "@/components/ui/use-toast"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useUser } from "@supabase/auth-helpers-react"
+import { createClient } from '@supabase/supabase-js'
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Clock4, FileEdit } from "lucide-react"
+import Link from "next/link"
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// Status badge component
+const StatusBadge = ({ status, paymentStatus }: { status: string, paymentStatus?: string }) => {
+  const getStatusConfig = () => {
+    switch (status) {
+      case 'pending':
+        return paymentStatus === 'paid' 
+          ? { label: 'Waiting for Vet', color: 'bg-yellow-100 text-yellow-800' }
+          : { label: 'Draft', color: 'bg-gray-100 text-gray-800' };
+      case 'confirmed':
+        return { label: 'Confirmed', color: 'bg-green-100 text-green-800' };
+      case 'completed':
+        return { label: 'Completed', color: 'bg-blue-100 text-blue-800' };
+      case 'cancelled':
+        return { label: 'Cancelled', color: 'bg-red-100 text-red-800' };
+      default:
+        return { label: status, color: 'bg-gray-100 text-gray-800' };
+    }
+  };
+
+  const { label, color } = getStatusConfig();
+  return (
+    <Badge className={`${color} font-medium`}>
+      {label}
+    </Badge>
+  );
+};
 
 export default function BookingsPage() {
-  const user = useUser();
-  const { useUserAppointments } = useAppointments();
-  const [retryCount, setRetryCount] = useState(0);
   const router = useRouter();
-  
-  const { data: appointments, isLoading, error, refetch } = useUserAppointments(user?.id ?? '');
+  const user = useUser();
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Add retry logic
   useEffect(() => {
-    if (error && retryCount < 3) {
-      const timer = setTimeout(() => {
-        refetch();
-        setRetryCount(prev => prev + 1);
-      }, 1000 * (retryCount + 1)); // Exponential backoff
+    if (!user) return;
 
-      return () => clearTimeout(timer);
+    const fetchAppointments = async () => {
+      try {
+        console.log('Fetching appointments for user:', user.id);
+        
+        const { data, error } = await supabase
+          .from('appointments')
+          .select(`
+            *,
+            pets (
+              id,
+              name,
+              type,
+              breed
+            )
+          `)
+          .eq('pet_owner_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching appointments:', error);
+          throw error;
+        }
+
+        console.log('Fetched appointments:', data);
+        setAppointments(data || []);
+      } catch (err: any) {
+        console.error('Failed to fetch appointments:', err);
+        setError(err.message || 'Failed to load appointments');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAppointments();
+  }, [user]);
+
+  // Filter appointments
+  const paidAppointments = appointments.filter(apt => {
+    const isPaid = apt.status !== 'pending' || apt.stripe_payment_intent_id;
+    console.log('Appointment filtering:', {
+      id: apt.id,
+      status: apt.status,
+      paymentIntent: apt.stripe_payment_intent_id,
+      isPaid
+    });
+    return isPaid;
+  });
+
+  const draftAppointments = appointments.filter(apt => {
+    const isDraft = apt.status === 'pending' && !apt.stripe_payment_intent_id;
+    console.log('Draft filtering:', {
+      id: apt.id,
+      status: apt.status,
+      paymentIntent: apt.stripe_payment_intent_id,
+      isDraft
+    });
+    return isDraft;
+  });
+
+  // Log summary of appointments
+  useEffect(() => {
+    if (appointments.length > 0) {
+      console.log('Appointments summary:', {
+        total: appointments.length,
+        paid: paidAppointments.length,
+        drafts: draftAppointments.length,
+        statuses: appointments.reduce((acc, apt) => {
+          acc[apt.status] = (acc[apt.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      });
     }
-  }, [error, retryCount, refetch]);
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <p className="text-gray-600">Please sign in to view your appointments.</p>
-          <Link href="/login">
-            <Button className="mt-4">Sign In</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  }, [appointments, paidAppointments, draftAppointments]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
         <div className="text-center p-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading appointments...</p>
+          <p className="text-gray-600">Loading your bookings...</p>
         </div>
       </div>
     );
   }
 
-  if (error && retryCount >= 3) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4 max-w-md">
-          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Unable to Load Appointments</h2>
-          <p className="text-gray-600 mb-4">We're having trouble loading your appointments. This might be a temporary issue.</p>
-          <div className="space-y-2">
-            <Button 
-              onClick={() => {
-                setRetryCount(0);
-                refetch();
-              }}
-              className="w-full"
-            >
-              Try Again
-            </Button>
-            <Link href="/book">
-              <Button variant="outline" className="w-full">
-                Book New Appointment
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!appointments || appointments.length === 0) {
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
         <div className="text-center p-4">
-          <p className="text-gray-600">No appointments found.</p>
-          <Link href="/book/appointment">
-            <Button className="mt-4">Book an Appointment</Button>
-          </Link>
+          <p className="text-red-600">{error}</p>
+          <Button
+            className="mt-4"
+            onClick={() => router.refresh()}
+          >
+            Try Again
+          </Button>
         </div>
       </div>
     );
   }
 
-  // Add a helper function to render status-specific messages
-  const renderStatusMessage = (appointment: any) => {
-    switch (appointment.status) {
-      case 'waiting_for_vet':
-        return (
-          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md mt-2">
-            <p className="text-sm text-yellow-800">
-              <AlertCircle className="inline h-4 w-4 mr-1" />
-              Waiting for a vet to accept your appointment
-            </p>
-          </div>
-        );
-      case 'time_proposed':
-        return (
-          <div className="bg-blue-50 border border-blue-200 p-3 rounded-md mt-2">
-            <p className="text-sm text-blue-800 font-medium">
-              The vet has proposed a new time:
-            </p>
-            <p className="text-sm text-blue-700 mt-1">
-              {appointment.proposed_time}
-            </p>
-            {appointment.proposed_message && (
-              <p className="text-sm text-blue-600 mt-1">
-                Message: {appointment.proposed_message}
-              </p>
-            )}
-            <div className="mt-3 flex gap-2">
-              <Button size="sm" onClick={() => handleAcceptProposal(appointment.id)}>
-                Accept
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => handleDeclineProposal(appointment.id)}>
-                Decline
-              </Button>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto max-w-[1400px] px-4 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">My Bookings</h1>
+          <Button asChild>
+            <Link href="/book">Book New Appointment</Link>
+          </Button>
+        </div>
+
+        {/* Active Bookings */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4">Active Bookings</h2>
+          {paidAppointments.length === 0 ? (
+            <p className="text-gray-600">No active bookings found.</p>
+          ) : (
+            <div className="grid gap-4">
+              {paidAppointments.map((appointment) => (
+                <Card key={appointment.id}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">
+                          {appointment.pets?.name || 'Pet'} - {appointment.services?.map((s: any) => s.name).join(', ')}
+                        </CardTitle>
+                        <CardDescription>
+                          <div className="flex items-center gap-2 mt-2">
+                            <StatusBadge 
+                              status={appointment.status} 
+                              paymentStatus={appointment.payment_status}
+                            />
+                          </div>
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex items-center text-gray-600">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        <span>{new Date(appointment.date).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex items-center text-gray-600">
+                        <Clock className="h-4 w-4 mr-2" />
+                        <span>{appointment.time_slot}</span>
+                      </div>
+                      <div className="flex items-center text-gray-600">
+                        <MapPin className="h-4 w-4 mr-2" />
+                        <span>{appointment.address}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button variant="outline" asChild className="w-full">
+                      <Link href={`/portal/bookings/${appointment.id}`}>
+                        View Details
+                      </Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Draft Bookings */}
+        {draftAppointments.length > 0 && (
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Draft Bookings</h2>
+            <div className="grid gap-4">
+              {draftAppointments.map((appointment) => (
+                <Card key={appointment.id} className="bg-gray-50">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">
+                          {appointment.pets?.name || 'Pet'} - {appointment.services?.map((s: any) => s.name).join(', ')}
+                        </CardTitle>
+                        <CardDescription>
+                          <div className="flex items-center gap-2 mt-2">
+                            <StatusBadge 
+                              status={appointment.status} 
+                              paymentStatus={appointment.payment_status}
+                            />
+                          </div>
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {appointment.date && (
+                        <div className="flex items-center text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          <span>{new Date(appointment.date).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                      {appointment.time_slot && (
+                        <div className="flex items-center text-gray-600">
+                          <Clock className="h-4 w-4 mr-2" />
+                          <span>{appointment.time_slot}</span>
+                        </div>
+                      )}
+                      {appointment.address && (
+                        <div className="flex items-center text-gray-600">
+                          <MapPin className="h-4 w-4 mr-2" />
+                          <span>{appointment.address}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button variant="outline" asChild className="w-full">
+                      <Link href={`/book/appointment?id=${appointment.id}`}>
+                        Continue Booking
+                      </Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
             </div>
           </div>
-        );
-      case 'confirmed':
-        return (
-          <div className="bg-green-50 border border-green-200 p-3 rounded-md mt-2">
-            <p className="text-sm text-green-800">
-              <Check className="inline h-4 w-4 mr-1" />
-              Appointment confirmed by vet
-            </p>
-          </div>
-        );
-      case 'declined':
-        return (
-          <div className="bg-red-50 border border-red-200 p-3 rounded-md mt-2">
-            <p className="text-sm text-red-800">
-              <X className="inline h-4 w-4 mr-1" />
-              Appointment declined by vet
-            </p>
-            <Button size="sm" className="mt-2" onClick={() => router.push('/book')}>
-              Book New Appointment
-            </Button>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const handleAcceptProposal = async (appointmentId: string) => {
-    try {
-      const response = await fetch('/api/appointments/owner-response', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appointmentId,
-          action: 'accept_proposal',
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to accept proposal');
-      
-      toast({
-        title: "Success",
-        description: "New time accepted",
-      });
-      
-      refetch(); // Refresh appointments
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to accept proposal",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDeclineProposal = async (appointmentId: string) => {
-    try {
-      const response = await fetch('/api/appointments/owner-response', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appointmentId,
-          action: 'decline_proposal',
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to decline proposal');
-      
-      toast({
-        title: "Proposal declined",
-        description: "The appointment has been cancelled",
-      });
-      
-      refetch();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to decline proposal",
-        variant: "destructive",
-      });
-    }
-  };
-
-  return (
-    <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">My Bookings</h1>
-        <Link href="/book">
-          <Button>Book New Appointment</Button>
-        </Link>
+        )}
       </div>
-
-      {appointments && appointments.length > 0 ? (
-        <div className="grid gap-6">
-          {appointments.map((appointment) => (
-            <Card key={appointment.id}>
-              <CardHeader>
-                <CardTitle>Appointment for {appointment.pets?.name}</CardTitle>
-                <CardDescription>
-                  <div className="flex items-center gap-2">
-                    <span className="capitalize">{appointment.status.replace('_', ' ')}</span>
-                    {appointment.services && Array.isArray(appointment.services) && appointment.services.length > 0 && (
-                      <span className="text-gray-500">
-                        • {appointment.services.map((s: any) => s.name || s).join(', ')}
-                      </span>
-                    )}
-                  </div>
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-gray-500" />
-                    <span>{appointment.date ? formatAppointmentDate(appointment.date) : 'Date not set'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-500" />
-                    <span>{appointment.time_slot || 'Time not set'}</span>
-                  </div>
-                  {appointment.address && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-gray-500" />
-                      <span>{appointment.address}</span>
-                    </div>
-                  )}
-                </div>
-                {renderStatusMessage(appointment)}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold mb-2">No Appointments Yet</h2>
-          <p className="text-gray-600 mb-4">You haven't booked any appointments yet.</p>
-          <Link href="/book">
-            <Button>Book Your First Appointment</Button>
-          </Link>
-        </div>
-      )}
     </div>
   );
 }
