@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { loadStripe } from '@stripe/stripe-js'
-import { useUser } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
 
 // Consistent DraftAppointment type
 type DraftAppointment = {
@@ -87,99 +87,150 @@ const SummaryItem = ({ icon, label, value }: { icon: React.ReactNode, label: str
 export default function PaymentPage() {
   const router = useRouter();
   const user = useUser();
+  const supabase = useSupabaseClient();
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [appointmentId, setAppointmentId] = useState<string | null>(null);
 
   useEffect(() => {
-    window.onbeforeunload = null;
-    return () => {
-      window.onbeforeunload = null;
+    const createAppointmentAndLoadSummary = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Load all booking data from sessionStorage
+        const pet_id = sessionStorage.getItem('booking_pet_id');
+        const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
+        const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
+        const address = sessionStorage.getItem('booking_address') || '';
+        const date = sessionStorage.getItem('booking_date') || '';
+        const time_slot = sessionStorage.getItem('booking_time_slot') || '';
+        const additional_info = sessionStorage.getItem('booking_additional_info') || '';
+        const is_in_perth = sessionStorage.getItem('booking_is_in_perth') === 'true';
+        const latitude = sessionStorage.getItem('booking_latitude');
+        const longitude = sessionStorage.getItem('booking_longitude');
+
+        if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
+          setError('Required booking information is missing. Please review the previous steps.');
+          setLoading(false);
+          return;
+        }
+
+        // Service pricing map
+        const serviceMap: Record<string, { id: string; name: string; price: number }> = {
+          '1': { id: '1', name: 'After hours home visit', price: 299 },
+          '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
+        };
+
+        // Calculate selected services and total
+        const selectedServices = service_ids.map((id: string) => 
+          serviceMap[id] || { id, name: `Service ${id}`, price: 0 }
+        );
+        const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
+
+        // Create or update appointment
+        const { data: appointment, error: appointmentError } = await supabase
+          .from('appointments')
+          .insert({
+            pet_owner_id: user.id,
+            pet_id: pet_id,
+            services: selectedServices,
+            status: 'pending',
+            date: date,
+            time_slot: time_slot,
+            address: address,
+            additional_info: additional_info,
+            notes: issueDescription,
+            total_price: totalPrice,
+            latitude: latitude ? parseFloat(latitude) : null,
+            longitude: longitude ? parseFloat(longitude) : null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (appointmentError) {
+          console.error('Error creating appointment:', appointmentError);
+          setError('Failed to create appointment. Please try again.');
+          setLoading(false);
+          return;
+        }
+
+        setAppointmentId(appointment.id);
+
+        // Get pet details
+        const { data: petData } = await supabase
+          .from('pets')
+          .select('name, type')
+          .eq('id', pet_id)
+          .single();
+
+        setBookingSummary({
+          id: appointment.id,
+          pet: petData,
+          services: selectedServices,
+          appointment: {
+            date: new Date(date).toLocaleDateString(),
+            time: time_slot,
+            address: address,
+            additionalInfo: additional_info,
+            issueDescription: issueDescription,
+          },
+          totalPrice: totalPrice,
+        });
+
+      } catch (err: any) {
+        console.error('Error loading booking summary:', err);
+        setError(err.message || 'Failed to load booking details. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     };
-  }, []);
 
-  useEffect(() => {
-    // Load all booking data from sessionStorage
-    const pet_id = sessionStorage.getItem('booking_pet_id');
-    const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
-    const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
-    const address = sessionStorage.getItem('booking_address') || '';
-    const date = sessionStorage.getItem('booking_date') || '';
-    const time_slot = sessionStorage.getItem('booking_time_slot') || '';
-    const time_of_day = sessionStorage.getItem('booking_time_of_day') || '';
-    const additional_info = sessionStorage.getItem('booking_additional_info') || '';
-    const is_in_perth = sessionStorage.getItem('booking_is_in_perth');
-    const latitude = sessionStorage.getItem('booking_latitude');
-    const longitude = sessionStorage.getItem('booking_longitude');
-
-    if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
-      setBookingSummary(null);
-      return;
-    }
-    setBookingSummary({
-      pet_id,
-      services: service_ids,
-      notes: issueDescription,
-      address,
-      date,
-      time_slot,
-      time_of_day,
-      additional_info,
-      is_in_perth,
-      latitude,
-      longitude,
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!bookingSummary) return;
-    if (!bookingSummary.pet_id || !bookingSummary.services || !bookingSummary.date || !bookingSummary.time_slot || !bookingSummary.address) {
-      setError('Required booking information is missing. Please review the previous steps.');
-      return;
-    }
-    const serviceMap = {
-      '1': { id: '1', name: 'After hours home visit', price: 299 },
-      '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
-    };
-    const selectedServicesDetails = bookingSummary.services.map(
-      (id: string) => serviceMap[id as keyof typeof serviceMap] || { id, name: `Service ${id}`, price: 0 }
-    );
-    const totalPrice = bookingSummary.total_price || selectedServicesDetails.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
-    setBookingSummary({
-      services: selectedServicesDetails,
-      appointment: {
-        date: bookingSummary.date ? new Date(bookingSummary.date).toLocaleDateString() : '',
-        time: bookingSummary.time_slot,
-        address: bookingSummary.address,
-        additionalInfo: bookingSummary.additional_info,
-        issueDescription: bookingSummary.notes,
-      },
-      totalPrice,
-    });
-  }, [bookingSummary]);
+    createAppointmentAndLoadSummary();
+  }, [user, supabase]);
 
   const handlePayment = async () => {
-    if (!bookingSummary) return;
+    if (!bookingSummary || !appointmentId) return;
+    
     setIsProcessingPayment(true);
     setError(null);
+    
     try {
-      window.onbeforeunload = null;
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          appointmentId: bookingSummary.id,
+          appointmentId: appointmentId,
           amount: bookingSummary.totalPrice,
         }),
       });
+
       if (!response.ok) {
-        throw new Error('Failed to create checkout session');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
       }
+
       const { url } = await response.json();
+      
+      if (!url) {
+        throw new Error('No checkout URL received');
+      }
+
+      // Clear session storage before redirecting
+      sessionStorage.clear();
+      
+      // Redirect to Stripe checkout
       window.location.href = url;
     } catch (err: any) {
+      console.error('Payment error:', err);
       setError(err.message || 'Failed to process payment. Please try again.');
       setIsProcessingPayment(false);
     }
@@ -193,11 +244,21 @@ export default function PaymentPage() {
     );
   }
 
-  if (error) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <p className="text-red-600">{error}</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
+        <p className="mt-4 text-gray-600">Loading booking details...</p>
+      </div>
+    );
+  }
+
+  if (error && !bookingSummary) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="text-center p-4 max-w-md">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <p className="text-red-600 mb-4">{error}</p>
           <Button
             className="mt-4"
             onClick={() => router.push('/book')}
@@ -248,7 +309,21 @@ export default function PaymentPage() {
           <h1 className="text-3xl font-bold text-center mb-2">Review and pay</h1>
           <p className="text-center text-gray-600 mb-8">Please review your booking details before proceeding to payment.</p>
 
+          {error && (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-md mb-6">
+              <p className="text-red-600">{error}</p>
+            </div>
+          )}
+
           <div className="space-y-6">
+            {/* Pet Information */}
+            {bookingSummary.pet && (
+              <div className="bg-white p-6 rounded-lg border">
+                <h2 className="text-lg font-semibold mb-4">Pet Information</h2>
+                <p>{bookingSummary.pet.name} - {bookingSummary.pet.type}</p>
+              </div>
+            )}
+
             {/* Services Section */}
             <div className="bg-white p-6 rounded-lg border">
               <h2 className="text-lg font-semibold mb-4">Selected Services</h2>
@@ -272,28 +347,37 @@ export default function PaymentPage() {
             <div className="bg-white p-6 rounded-lg border">
               <h2 className="text-lg font-semibold mb-4">Appointment Details</h2>
               <div className="space-y-4">
-                <div>
-                  <span className="text-gray-600">Date:</span>
-                  <span className="ml-2">{bookingSummary.appointment.date}</span>
+                <div className="flex items-start">
+                  <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3" />
+                  <div>
+                    <span className="text-gray-600">Date:</span>
+                    <span className="ml-2 font-medium">{bookingSummary.appointment.date}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-gray-600">Time:</span>
-                  <span className="ml-2">{bookingSummary.appointment.time}</span>
+                <div className="flex items-start">
+                  <Clock className="h-5 w-5 text-teal-500 mt-0.5 mr-3" />
+                  <div>
+                    <span className="text-gray-600">Time:</span>
+                    <span className="ml-2 font-medium">{bookingSummary.appointment.time}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-gray-600">Address:</span>
-                  <span className="ml-2">{bookingSummary.appointment.address}</span>
+                <div className="flex items-start">
+                  <MapPin className="h-5 w-5 text-teal-500 mt-0.5 mr-3" />
+                  <div>
+                    <span className="text-gray-600">Address:</span>
+                    <span className="ml-2 font-medium">{bookingSummary.appointment.address}</span>
+                  </div>
                 </div>
                 {bookingSummary.appointment.additionalInfo && (
                   <div>
                     <span className="text-gray-600">Additional Information:</span>
-                    <span className="ml-2">{bookingSummary.appointment.additionalInfo}</span>
+                    <p className="mt-1 text-gray-700">{bookingSummary.appointment.additionalInfo}</p>
                   </div>
                 )}
                 {bookingSummary.appointment.issueDescription && (
                   <div>
                     <span className="text-gray-600">Issue Description:</span>
-                    <span className="ml-2">{bookingSummary.appointment.issueDescription}</span>
+                    <p className="mt-1 text-gray-700">{bookingSummary.appointment.issueDescription}</p>
                   </div>
                 )}
               </div>
@@ -318,7 +402,10 @@ export default function PaymentPage() {
                   <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
                 </>
               ) : (
-                "Proceed to Payment"
+                <>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Proceed to Payment
+                </>
               )}
             </Button>
           </div>

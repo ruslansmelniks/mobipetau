@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const { data: appointment, error: updateError } = await supabaseAdmin
       .from('appointments')
       .update({
-        status: 'confirmed',
+        status: 'waiting_for_vet',
         payment_status: 'paid',
         stripe_session_id: sessionId,
         updated_at: new Date().toISOString()
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     if (updateError) {
       console.error('Error updating appointment:', updateError);
       return NextResponse.json(
-        { error: 'Failed to update appointment' },
+        { error: 'Failed to update appointment status' },
         { status: 500 }
       );
     }
@@ -77,7 +77,17 @@ export async function POST(req: NextRequest) {
       status: appointment.status
     });
 
-    return NextResponse.json({ appointment });
+    // Return success response with appointment details
+    return NextResponse.json({ 
+      success: true,
+      appointment,
+      appointmentId,
+      message: 'Your booking has been confirmed and payment received!',
+      newStatus: appointment.status,
+      petName: appointment.pets?.name,
+      appointmentDate: appointment.date,
+      appointmentTime: appointment.time_slot
+    });
   } catch (error) {
     console.error('Error confirming payment:', error);
     return NextResponse.json(
