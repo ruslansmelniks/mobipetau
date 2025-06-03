@@ -63,11 +63,8 @@ export default function BookAppointment() {
   }, [selectedPet]);
 
   const handlePetSelect = async (petId: string) => {
-    if (!selectedPet) {
-      setError("Please select a pet before proceeding.");
-      return;
-    }
     setSelectedPet(petId);
+    setError(null);
   };
 
   const handleNext = async () => {
@@ -77,6 +74,7 @@ export default function BookAppointment() {
     }
     setError(null);
     try {
+      sessionStorage.setItem('booking_pet_id', selectedPet);
       router.push("/book/services");
     } catch (err: any) {
       setError('Error updating pet selection. Please try again.');

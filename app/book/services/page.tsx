@@ -74,6 +74,9 @@ export default function SelectServices() {
   useEffect(() => {
     if (!user) return;
     setAllServices(services);
+    // Load selected pet from sessionStorage (optional, for validation)
+    const petId = sessionStorage.getItem('booking_pet_id');
+    // Optionally, redirect if not found
   }, [user]);
 
   const handleServiceToggle = async (serviceId: string) => {
@@ -88,7 +91,8 @@ export default function SelectServices() {
     setError(null);
     try {
       setIsSaving(true);
-      // Placeholder for actual implementation
+      sessionStorage.setItem('booking_service_ids', JSON.stringify(selectedServiceIds));
+      sessionStorage.setItem('booking_issue_description', issueDescription);
       router.push("/book/appointment");
     } catch (err: any) {
       setError('Error updating services. Please try again.');
@@ -213,11 +217,13 @@ export default function SelectServices() {
               disabled={selectedServiceIds.length === 0 || isSaving}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              {isSaving && (
+              {isSaving ? (
                 <>
                   <span className="mr-2">Processing...</span>
                   <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
                 </>
+              ) : (
+                'Next'
               )}
             </Button>
           </div>

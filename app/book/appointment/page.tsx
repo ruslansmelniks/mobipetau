@@ -163,6 +163,11 @@ export default function AppointmentDetails() {
 
   useEffect(() => {
     setLoading(false)
+    // Load previous step data from sessionStorage
+    const petId = sessionStorage.getItem('booking_pet_id');
+    const serviceIds = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
+    const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
+    // Optionally, set these to state or validate
   }, [])
 
   const handleNext = async () => {
@@ -170,9 +175,16 @@ export default function AppointmentDetails() {
       return;
     }
     try {
-      // Placeholder for the removed updateDraftAppointment function
-      // This should be replaced with the actual implementation
-      console.log('Updating appointment details...');
+      sessionStorage.setItem('booking_address', address);
+      sessionStorage.setItem('booking_date', date.toISOString());
+      sessionStorage.setItem('booking_time_slot', selectedTimeSlot);
+      sessionStorage.setItem('booking_time_of_day', timeOfDay);
+      sessionStorage.setItem('booking_additional_info', additionalInfo);
+      sessionStorage.setItem('booking_is_in_perth', JSON.stringify(isInPerth));
+      if (addressLatLng) {
+        sessionStorage.setItem('booking_latitude', addressLatLng.lat.toString());
+        sessionStorage.setItem('booking_longitude', addressLatLng.lng.toString());
+      }
       router.push('/book/payment');
     } catch (err) {
       // error is handled by the hook

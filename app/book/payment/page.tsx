@@ -99,6 +99,39 @@ export default function PaymentPage() {
   }, []);
 
   useEffect(() => {
+    // Load all booking data from sessionStorage
+    const pet_id = sessionStorage.getItem('booking_pet_id');
+    const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
+    const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
+    const address = sessionStorage.getItem('booking_address') || '';
+    const date = sessionStorage.getItem('booking_date') || '';
+    const time_slot = sessionStorage.getItem('booking_time_slot') || '';
+    const time_of_day = sessionStorage.getItem('booking_time_of_day') || '';
+    const additional_info = sessionStorage.getItem('booking_additional_info') || '';
+    const is_in_perth = sessionStorage.getItem('booking_is_in_perth');
+    const latitude = sessionStorage.getItem('booking_latitude');
+    const longitude = sessionStorage.getItem('booking_longitude');
+
+    if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
+      setBookingSummary(null);
+      return;
+    }
+    setBookingSummary({
+      pet_id,
+      services: service_ids,
+      notes: issueDescription,
+      address,
+      date,
+      time_slot,
+      time_of_day,
+      additional_info,
+      is_in_perth,
+      latitude,
+      longitude,
+    });
+  }, []);
+
+  useEffect(() => {
     if (!bookingSummary) return;
     if (!bookingSummary.pet_id || !bookingSummary.services || !bookingSummary.date || !bookingSummary.time_slot || !bookingSummary.address) {
       setError('Required booking information is missing. Please review the previous steps.');
