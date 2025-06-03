@@ -11,6 +11,7 @@ export function useAppointmentBooking() {
   const updateAppointment = useUpdateAppointment();
 
   const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const updateDraft = async (updates: Partial<Appointment>) => {
     if (!draftAppointment?.id) {
@@ -18,15 +19,25 @@ export function useAppointmentBooking() {
       return;
     }
 
+    if (isUpdating) {
+      console.log('Update already in progress, skipping');
+      return;
+    }
+
     try {
+      setIsUpdating(true);
+      setError(null);
+      
       await updateAppointment.mutateAsync({
         id: draftAppointment.id,
         updates,
       });
-      setError(null);
     } catch (err) {
       setError('Failed to update appointment details');
       console.error(err);
+      throw err;
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -48,9 +59,16 @@ export function useAppointmentBooking() {
   };
 
   const updateAdditionalInfo = async (additionalInfo: string) => {
-    await updateDraft({
-      additional_info: additionalInfo,
-    });
+    console.log('Updating additional info:', additionalInfo);
+    try {
+      await updateDraft({
+        additional_info: additionalInfo,
+      });
+      console.log('Additional info updated successfully');
+    } catch (err) {
+      console.error('Error updating additional info:', err);
+      throw err;
+    }
   };
 
   const updateServices = async (services: any[], totalPrice: number) => {
@@ -68,6 +86,6 @@ export function useAppointmentBooking() {
     updateDateTime,
     updateAdditionalInfo,
     updateServices,
-    isUpdating: updateAppointment.isPending,
+    isUpdating: isUpdating || updateAppointment.isPending,
   };
 } 

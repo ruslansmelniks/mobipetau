@@ -1,5 +1,6 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, Suspense } from 'react';
 import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import { Loader } from '@/components/ui/loader';
 
 const perthCenter = { lat: -31.9505, lng: 115.8605 };
 const perthBounds = {
@@ -16,6 +17,45 @@ interface GoogleMapsAutocompleteProps {
   disabled?: boolean;
 }
 
+// Error boundary component
+class GoogleMapsErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Google Maps Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 border border-red-200 bg-red-50 rounded-md">
+          <p className="text-red-600">Failed to load Google Maps. Please try refreshing the page.</p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Loading component
+const GoogleMapsLoading = () => (
+  <div className="flex items-center justify-center h-[300px] bg-gray-50 rounded-md">
+    <Loader size="lg" />
+    <span className="ml-2 text-gray-600">Loading map...</span>
+  </div>
+);
+
 export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ value, onChange, onPlaceSelected, disabled }) => {
   const [mapCenter, setMapCenter] = useState(perthCenter);
   const [marker, setMarker] = useState<{ lat: number, lng: number } | null>(null);
@@ -29,11 +69,11 @@ export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ 
     libraries: ['places'],
   });
 
-  const onLoad = (autocomplete: google.maps.places.Autocomplete) => {
+  const onLoad = useCallback((autocomplete: google.maps.places.Autocomplete) => {
     autocompleteRef.current = autocomplete;
-  };
+  }, []);
 
-  const onPlaceChanged = () => {
+  const onPlaceChanged = useCallback(() => {
     if (autocompleteRef.current) {
       const place = autocompleteRef.current.getPlace();
       if (place.geometry && place.geometry.location) {
@@ -47,10 +87,10 @@ export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ 
         onChange(place.formatted_address);
       }
     }
-  };
+  }, [onChange, onPlaceSelected]);
 
   // Reverse geocode when marker is dragged
-  const handleMarkerDragEnd = async (e: google.maps.MapMouseEvent) => {
+  const handleMarkerDragEnd = useCallback(async (e: google.maps.MapMouseEvent) => {
     if (!e.latLng) return;
     const lat = e.latLng.lat();
     const lng = e.latLng.lng();
@@ -80,65 +120,78 @@ export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ 
       setReverseGeocodeLoading(false);
       setReverseGeocodeError('Reverse geocoding failed.');
     }
-  };
+  }, [onChange, onPlaceSelected]);
 
-  if (loadError) return <div>Failed to load Google Maps</div>;
-  if (!isLoaded) return <div>Loading map...</div>;
+  if (loadError) {
+    return (
+      <div className="p-4 border border-red-200 bg-red-50 rounded-md">
+        <p className="text-red-600">Failed to load Google Maps. Please try refreshing the page.</p>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return <GoogleMapsLoading />;
+  }
 
   return (
-    <div>
-      <Autocomplete
-        onLoad={onLoad}
-        onPlaceChanged={onPlaceChanged}
-        options={{
-          bounds: new window.google.maps.LatLngBounds(
-            { lat: perthBounds.south, lng: perthBounds.west },
-            { lat: perthBounds.north, lng: perthBounds.east }
-          ),
-          strictBounds: true,
-          componentRestrictions: { country: 'au' },
-        }}
-      >
-        <input
-          type="text"
-          className="w-full border rounded px-3 py-2"
-          placeholder="Enter your address"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          disabled={disabled}
-        />
-      </Autocomplete>
-      <div className="mt-4 rounded overflow-hidden" style={{ height: 300 }}>
-        <GoogleMap
-          mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={marker || perthCenter}
-          zoom={marker ? 16 : 11}
+    <GoogleMapsErrorBoundary>
+      <div>
+        <Autocomplete
+          onLoad={onLoad}
+          onPlaceChanged={onPlaceChanged}
           options={{
-            restriction: {
-              latLngBounds: perthBounds,
-              strictBounds: false,
-            },
-            streetViewControl: false,
-            mapTypeControl: false,
-            fullscreenControl: false,
+            bounds: new window.google.maps.LatLngBounds(
+              { lat: perthBounds.south, lng: perthBounds.west },
+              { lat: perthBounds.north, lng: perthBounds.east }
+            ),
+            strictBounds: true,
+            componentRestrictions: { country: 'au' },
           }}
         >
-          {marker && (
-            <Marker
-              position={marker}
-              draggable
-              onDragEnd={handleMarkerDragEnd}
-            />
-          )}
-        </GoogleMap>
+          <input
+            type="text"
+            className="w-full border rounded px-3 py-2"
+            placeholder="Enter your address"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            disabled={disabled}
+          />
+        </Autocomplete>
+        <div className="mt-4 rounded overflow-hidden" style={{ height: 300 }}>
+          <Suspense fallback={<GoogleMapsLoading />}>
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={marker || perthCenter}
+              zoom={marker ? 16 : 11}
+              options={{
+                restriction: {
+                  latLngBounds: perthBounds,
+                  strictBounds: false,
+                },
+                streetViewControl: false,
+                mapTypeControl: false,
+                fullscreenControl: false,
+              }}
+            >
+              {marker && (
+                <Marker
+                  position={marker}
+                  draggable
+                  onDragEnd={handleMarkerDragEnd}
+                />
+              )}
+            </GoogleMap>
+          </Suspense>
+        </div>
+        {reverseGeocodeLoading && (
+          <div className="text-sm text-gray-500 mt-2">Looking up address for marker...</div>
+        )}
+        {reverseGeocodeError && (
+          <div className="text-sm text-red-600 mt-2">{reverseGeocodeError}</div>
+        )}
       </div>
-      {reverseGeocodeLoading && (
-        <div className="text-sm text-gray-500 mt-2">Looking up address for marker...</div>
-      )}
-      {reverseGeocodeError && (
-        <div className="text-sm text-red-600 mt-2">{reverseGeocodeError}</div>
-      )}
-    </div>
+    </GoogleMapsErrorBoundary>
   );
 };
 

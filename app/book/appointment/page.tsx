@@ -17,8 +17,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import { useDraftAppointment } from '@/hooks/useDraftAppointment'
-import { BookingWarning } from "@/components/booking-warning"
 import { useAppointmentBooking } from '@/hooks/useAppointmentBooking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MapPin } from 'lucide-react'
@@ -147,65 +145,34 @@ export default function AppointmentDetails() {
   const supabase = useSupabaseClient()
   const { isLoading: sessionLoading } = useSessionContext()
   const user = useUser()
-  const { draftAppointment, isLoading: draftLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment()
 
   // Form state with proper initial values
-  const [address, setAddress] = useState<string>(draftAppointment?.address || '')
-  const [additionalInfo, setAdditionalInfo] = useState<string>(draftAppointment?.additional_info || '')
-  const [date, setDate] = useState<Date | undefined>(() => {
-    if (!draftAppointment?.date) return undefined;
-    const parsedDate = new Date(draftAppointment.date);
-    return !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
-  });
+  const [address, setAddress] = useState<string>('')
+  const [additionalInfo, setAdditionalInfo] = useState<string>('')
+  const [date, setDate] = useState<Date | undefined>(undefined)
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening'>(
-    draftAppointment?.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning'
+    'morning'
   )
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(
-    draftAppointment?.time_slot || null
-  )
-  const [isInPerth, setIsInPerth] = useState<boolean>(draftAppointment?.is_in_perth ?? true)
-  const [addressLatLng, setAddressLatLng] = useState<{ lat: number; lng: number } | null>(
-    draftAppointment?.latitude && draftAppointment?.longitude
-      ? { lat: draftAppointment.latitude, lng: draftAppointment.longitude }
-      : null
-  )
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null)
+  const [isInPerth, setIsInPerth] = useState<boolean>(true)
+  const [addressLatLng, setAddressLatLng] = useState<{ lat: number; lng: number } | null>(null)
   
   // UI state
   const [loading, setLoading] = useState<boolean>(true)
   const [showPerthWarning, setShowPerthWarning] = useState<boolean>(false)
 
   useEffect(() => {
-    if (draftAppointment) {
-      setAddress(draftAppointment.address || '')
-      setAdditionalInfo(draftAppointment.additional_info || '')
-      setDate(draftAppointment.date ? new Date(draftAppointment.date) : undefined)
-      setSelectedTimeSlot(draftAppointment.time_slot || null)
-      setTimeOfDay(draftAppointment.time_of_day as 'morning' | 'afternoon' | 'evening' || 'morning')
-      setAddressLatLng(
-        draftAppointment.latitude && draftAppointment.longitude
-          ? { lat: draftAppointment.latitude, lng: draftAppointment.longitude }
-          : null
-      )
-      setIsInPerth(draftAppointment.is_in_perth ?? true)
-    }
     setLoading(false)
-  }, [draftAppointment])
+  }, [])
 
   const handleNext = async () => {
     if (!date || !selectedTimeSlot) {
       return;
     }
     try {
-      await updateDraftAppointment({
-        date: date.toISOString(),
-        time_slot: selectedTimeSlot,
-        time_of_day: timeOfDay,
-        address,
-        latitude: addressLatLng?.lat,
-        longitude: addressLatLng?.lng,
-        is_in_perth: isInPerth,
-        additional_info: additionalInfo,
-      });
+      // Placeholder for the removed updateDraftAppointment function
+      // This should be replaced with the actual implementation
+      console.log('Updating appointment details...');
       router.push('/book/payment');
     } catch (err) {
       // error is handled by the hook
@@ -224,25 +191,6 @@ export default function AppointmentDetails() {
     return (
       <div className="flex justify-center items-center h-screen">
         <p>Loading appointment details...</p>
-      </div>
-    );
-  }
-
-  if (draftError) {
-    return (
-      <div className="container mx-auto max-w-md mt-8 text-center p-4">
-        <h2 className="text-xl font-semibold text-red-600 mb-2">
-          An Error Occurred
-        </h2>
-        <p className="mb-4">{draftError}</p>
-        <Button
-          variant="default"
-          onClick={() => {
-            refetch();
-          }}
-        >
-          Retry
-        </Button>
       </div>
     );
   }
@@ -421,8 +369,6 @@ export default function AppointmentDetails() {
           </div>
         </div>
       </main>
-
-      <BookingWarning />
     </div>
   );
 }

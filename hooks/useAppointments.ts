@@ -17,11 +17,19 @@ export function useAppointments() {
   const useUserAppointments = (userId: string | null) => {
     return useQuery({
       queryKey: ['appointments', userId],
-      queryFn: () => {
-        if (!userId) return Promise.resolve([]);
-        return appointmentService.getAppointmentsByUser(userId);
+      queryFn: async () => {
+        if (!userId) return [];
+        try {
+          const appointments = await appointmentService.getAppointmentsByUser(userId);
+          return appointments || [];
+        } catch (error) {
+          console.error('Error fetching appointments:', error);
+          return [];
+        }
       },
       enabled: !!userId,
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
   };
 

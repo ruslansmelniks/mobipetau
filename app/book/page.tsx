@@ -10,8 +10,6 @@ import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
-import { useDraftAppointment } from '@/hooks/useDraftAppointment'
-import { BookingWarning } from "@/components/booking-warning"
 
 // Define a simple appointment type as per user request
 type DraftAppointment = {
@@ -37,7 +35,6 @@ export default function BookAppointment() {
   const router = useRouter();
   const supabase = useSupabaseClient();
   const [isCancelling, setIsCancelling] = useState(false);
-  const { draftAppointment, isLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment();
   const debug = true;
 
   useEffect(() => {
@@ -60,35 +57,26 @@ export default function BookAppointment() {
   }, [authUser, supabase]);
 
   useEffect(() => {
-    if (draftAppointment && draftAppointment.pet_id) {
-      setSelectedPet(draftAppointment.pet_id);
-    } else {
-      setSelectedPet(null);
+    if (selectedPet) {
+      setError(null);
     }
-  }, [draftAppointment]);
+  }, [selectedPet]);
 
   const handlePetSelect = async (petId: string) => {
-    if (!draftAppointment || !draftAppointment.id) {
-      setError("Cannot select pet: No booking loaded. Please refresh.");
+    if (!selectedPet) {
+      setError("Please select a pet before proceeding.");
       return;
     }
     setSelectedPet(petId);
-    try {
-      const updatedDraft = await updateDraftAppointment({ pet_id: petId });
-      setError(null);
-    } catch (updateError: any) {
-      setError(`Error saving pet selection: ${updateError.message}. Please try selecting again.`);
-    }
   };
 
   const handleNext = async () => {
-    if (!selectedPet || !draftAppointment) {
+    if (!selectedPet) {
       setError("Please select a pet before proceeding.");
       return;
     }
     setError(null);
     try {
-      await updateDraftAppointment({ pet_id: selectedPet });
       router.push("/book/services");
     } catch (err: any) {
       setError('Error updating pet selection. Please try again.');
@@ -96,7 +84,7 @@ export default function BookAppointment() {
   };
 
   const handleCancelBooking = async () => {
-    if (!draftAppointment || !draftAppointment.id) {
+    if (!selectedPet) {
       setError("No booking to cancel.");
       return;
     }
@@ -106,7 +94,7 @@ export default function BookAppointment() {
     const { error: deleteError } = await supabase
       .from('appointments')
       .delete()
-      .eq('id', draftAppointment.id);
+      .eq('id', selectedPet);
     setIsCancelling(false);
     if (deleteError) {
       setError(`Failed to cancel booking draft: ${deleteError.message}. Please try again.`);
@@ -123,38 +111,21 @@ export default function BookAppointment() {
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  if (error || draftError) {
+  if (error) {
     return (
       <div className="container mx-auto max-w-md mt-8 text-center p-4">
         <h2 className="text-xl font-semibold text-red-600 mb-2">
           An Error Occurred
         </h2>
-        <p className="mb-4">{error || draftError}</p>
+        <p className="mb-4">{error}</p>
         <Button
           variant="default"
           onClick={() => {
             setError(null);
-            refetch();
           }}
         >
           Retry
         </Button>
-      </div>
-    );
-  }
-
-  if (!draftAppointment) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p>Loading...</p>
       </div>
     );
   }
@@ -269,15 +240,13 @@ export default function BookAppointment() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!selectedPet || isLoading || isCancelling}
+              disabled={!selectedPet || isCancelling}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              {isLoading || isCancelling ? "Processing..." : "Next"}
+              {isCancelling ? "Processing..." : "Next"}
             </Button>
           </div>
         </div>
-
-        <BookingWarning />
       </main>
     </div>
   )

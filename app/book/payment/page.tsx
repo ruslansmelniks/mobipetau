@@ -9,8 +9,6 @@ import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { loadStripe } from '@stripe/stripe-js'
 import { useUser } from "@supabase/auth-helpers-react"
-import { useDraftAppointment } from '@/hooks/useDraftAppointment'
-import { BookingWarning } from "@/components/booking-warning"
 
 // Consistent DraftAppointment type
 type DraftAppointment = {
@@ -89,7 +87,6 @@ const SummaryItem = ({ icon, label, value }: { icon: React.ReactNode, label: str
 export default function PaymentPage() {
   const router = useRouter();
   const user = useUser();
-  const { draftAppointment, isLoading, error: draftError, refetch } = useDraftAppointment();
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<any>(null);
@@ -102,36 +99,31 @@ export default function PaymentPage() {
   }, []);
 
   useEffect(() => {
-    if (!draftAppointment) return;
-    if (!draftAppointment.pet_id || !draftAppointment.services || !draftAppointment.date || !draftAppointment.time_slot || !draftAppointment.address) {
+    if (!bookingSummary) return;
+    if (!bookingSummary.pet_id || !bookingSummary.services || !bookingSummary.date || !bookingSummary.time_slot || !bookingSummary.address) {
       setError('Required booking information is missing. Please review the previous steps.');
       return;
     }
-    const draftServices = Array.isArray(draftAppointment.services)
-      ? draftAppointment.services
-      : typeof draftAppointment.services === 'string'
-      ? JSON.parse(draftAppointment.services)
-      : [];
     const serviceMap = {
       '1': { id: '1', name: 'After hours home visit', price: 299 },
       '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
     };
-    const selectedServicesDetails = draftServices.map(
+    const selectedServicesDetails = bookingSummary.services.map(
       (id: string) => serviceMap[id as keyof typeof serviceMap] || { id, name: `Service ${id}`, price: 0 }
     );
-    const totalPrice = draftAppointment.total_price || selectedServicesDetails.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
+    const totalPrice = bookingSummary.total_price || selectedServicesDetails.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
     setBookingSummary({
       services: selectedServicesDetails,
       appointment: {
-        date: draftAppointment.date ? new Date(draftAppointment.date).toLocaleDateString() : '',
-        time: draftAppointment.time_slot,
-        address: draftAppointment.address,
-        additionalInfo: draftAppointment.additional_info,
-        issueDescription: draftAppointment.notes,
+        date: bookingSummary.date ? new Date(bookingSummary.date).toLocaleDateString() : '',
+        time: bookingSummary.time_slot,
+        address: bookingSummary.address,
+        additionalInfo: bookingSummary.additional_info,
+        issueDescription: bookingSummary.notes,
       },
       totalPrice,
     });
-  }, [draftAppointment]);
+  }, [bookingSummary]);
 
   const handlePayment = async () => {
     if (!bookingSummary) return;
@@ -145,7 +137,7 @@ export default function PaymentPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          appointmentId: draftAppointment?.id,
+          appointmentId: bookingSummary.id,
           amount: bookingSummary.totalPrice,
         }),
       });
@@ -168,27 +160,16 @@ export default function PaymentPage() {
     );
   }
 
-  if (isLoading) {
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
         <div className="text-center p-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading payment details...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || draftError) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <p className="text-red-600">{error || String(draftError)}</p>
+          <p className="text-red-600">{error}</p>
           <Button
             className="mt-4"
-            onClick={() => refetch()}
+            onClick={() => router.push('/book')}
           >
-            Try Again
+            Start Over
           </Button>
         </div>
       </div>
@@ -310,8 +291,6 @@ export default function PaymentPage() {
           </div>
         </div>
       </main>
-
-      <BookingWarning />
     </div>
   );
 }

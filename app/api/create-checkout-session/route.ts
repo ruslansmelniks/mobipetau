@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 
 type ErrorResponse = {
   error: string;
@@ -10,6 +11,11 @@ type ErrorResponse = {
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16' as any,
 });
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,19 +29,6 @@ export async function POST(req: NextRequest) {
       console.error("Invalid amount:", amount);
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
     }
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name) {
-            return req.cookies.get(name)?.value;
-          },
-          set() {},
-          remove() {},
-        },
-      }
-    );
     const { data: appointment, error: appointmentError } = await supabase
       .from('appointments')
       .select(`
@@ -66,29 +59,29 @@ export async function POST(req: NextRequest) {
     if (petName) {
       description = `Vet appointment for ${petName}`;
     }
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    line_items: [
-      {
-        price_data: {
-          currency: 'aud',
-          product_data: {
-              name: 'MobiPet Vet Appointment',
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'aud',
+            product_data: {
+              name: 'Veterinary Appointment',
               description: description,
-          },
+            },
             unit_amount: Math.round(amount * 100),
+          },
+          quantity: 1,
         },
-        quantity: 1,
-      },
-    ],
-    mode: 'payment',
-      success_url: `${req.nextUrl.origin}/book/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+      ],
+      mode: 'payment',
+      success_url: `${req.nextUrl.origin}/book/confirmation?session_id={CHECKOUT_SESSION_ID}&appointment_id=${appointmentId}`,
       cancel_url: `${req.nextUrl.origin}/book/payment`,
       metadata: {
-        appointmentId
+        appointmentId: appointmentId
       }
-  });
-    return NextResponse.json({ sessionId: session.id });
+    });
+    return NextResponse.json({ url: session.url });
   } catch (error: any) {
     console.error('Error creating checkout session:', error);
     const errorResponse: ErrorResponse = {

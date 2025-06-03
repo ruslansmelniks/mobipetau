@@ -27,6 +27,11 @@ export class AppointmentService {
 
   async getAppointmentsByUser(userId: string): Promise<AppointmentWithRelations[]> {
     try {
+      if (!userId) {
+        console.log('No userId provided, returning empty array');
+        return [];
+      }
+
       // First, let's try a simpler query to debug
       const { data: appointments, error: appointmentsError } = await this.supabase
         .from('appointments')
@@ -41,40 +46,62 @@ export class AppointmentService {
 
       // If no appointments, return empty array
       if (!appointments || appointments.length === 0) {
+        console.log('No appointments found for user:', userId);
         return [];
       }
+
+      console.log(`Found ${appointments.length} appointments for user:`, userId);
 
       // Now fetch related data separately to avoid join issues
       const appointmentsWithRelations = await Promise.all(
         appointments.map(async (appointment) => {
-          let pet = null;
-          let pet_owner = null;
+          try {
+            let pet = null;
+            let pet_owner = null;
 
-          // Fetch pet data if pet_id exists
-          if (appointment.pet_id) {
-            const { data: petData } = await this.supabase
-              .from('pets')
-              .select('*')
-              .eq('id', appointment.pet_id)
-              .single();
-            pet = petData;
+            // Fetch pet data if pet_id exists
+            if (appointment.pet_id) {
+              const { data: petData, error: petError } = await this.supabase
+                .from('pets')
+                .select('*')
+                .eq('id', appointment.pet_id)
+                .single();
+              
+              if (petError) {
+                console.error('Error fetching pet data:', petError);
+              } else {
+                pet = petData;
+              }
+            }
+
+            // Fetch pet owner data
+            if (appointment.pet_owner_id) {
+              const { data: ownerData, error: ownerError } = await this.supabase
+                .from('users')
+                .select('*')
+                .eq('id', appointment.pet_owner_id)
+                .single();
+              
+              if (ownerError) {
+                console.error('Error fetching owner data:', ownerError);
+              } else {
+                pet_owner = ownerData;
+              }
+            }
+
+            return {
+              ...appointment,
+              pets: pet,
+              pet_owner: pet_owner,
+            };
+          } catch (error) {
+            console.error('Error processing appointment:', error);
+            return {
+              ...appointment,
+              pets: null,
+              pet_owner: null,
+            };
           }
-
-          // Fetch pet owner data
-          if (appointment.pet_owner_id) {
-            const { data: ownerData } = await this.supabase
-              .from('users')
-              .select('*')
-              .eq('id', appointment.pet_owner_id)
-              .single();
-            pet_owner = ownerData;
-          }
-
-          return {
-            ...appointment,
-            pets: pet,
-            pet_owner: pet_owner,
-          };
         })
       );
 
@@ -160,7 +187,7 @@ export class AppointmentService {
       updated_at: new Date().toISOString(),
     };
 
-    if (options?.proposedDate) updateData.proposed_date = options.proposedDate;
+    if (options?.proposedDate) updateData.proposed_at = options.proposedDate;
     if (options?.proposedTime) updateData.proposed_time = options.proposedTime;
     if (options?.message) updateData.proposed_message = options.message;
 

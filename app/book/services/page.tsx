@@ -11,9 +11,6 @@ import { Label } from "@/components/ui/label"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
-import { getOrCreateDraft, updateDraft } from "@/lib/draftService"
-import { BookingWarning } from "@/components/booking-warning"
-import { useDraftAppointment } from '@/hooks/useDraftAppointment'
 
 // Define types consistent with app/book/page.tsx
 type DraftAppointment = {
@@ -65,7 +62,6 @@ export default function SelectServices() {
   const router = useRouter();
   const supabase = useSupabaseClient();
   const user = useUser();
-  const { draftAppointment, isLoading, error: draftError, updateDraftAppointment, refetch } = useDraftAppointment();
   const [error, setError] = useState<string | null>(null);
 
   const calculateTotal = useCallback(() => {
@@ -78,36 +74,21 @@ export default function SelectServices() {
   useEffect(() => {
     if (!user) return;
     setAllServices(services);
-    if (draftAppointment) {
-      const draftServices = Array.isArray(draftAppointment.services)
-        ? draftAppointment.services
-        : (typeof draftAppointment.services === 'string' ? JSON.parse(draftAppointment.services) : []);
-      setSelectedServiceIds(draftServices);
-      setIssueDescription(draftAppointment.notes || "");
-    }
-  }, [user, draftAppointment]);
+  }, [user]);
 
   const handleServiceToggle = async (serviceId: string) => {
     const newSelectedServiceIds = selectedServiceIds.includes(serviceId)
       ? selectedServiceIds.filter((id) => id !== serviceId)
       : [...selectedServiceIds, serviceId];
     setSelectedServiceIds(newSelectedServiceIds);
-    await updateDraftAppointment({
-      services: newSelectedServiceIds,
-      total_price: calculateTotal(),
-    });
   };
 
   const handleNext = async () => {
-    if (selectedServiceIds.length === 0 || !draftAppointment) return;
+    if (selectedServiceIds.length === 0) return;
     setError(null);
     try {
       setIsSaving(true);
-      await updateDraftAppointment({
-        services: selectedServiceIds,
-        notes: issueDescription,
-        total_price: calculateTotal(),
-      });
+      // Placeholder for actual implementation
       router.push("/book/appointment");
     } catch (err: any) {
       setError('Error updating services. Please try again.');
@@ -123,26 +104,17 @@ export default function SelectServices() {
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p>Loading services...</p>
-      </div>
-    );
-  }
-
-  if (error || draftError) {
+  if (error) {
     return (
       <div className="container mx-auto max-w-md mt-8 text-center p-4">
         <h2 className="text-xl font-semibold text-red-600 mb-2">
           An Error Occurred
         </h2>
-        <p className="mb-4">{error || draftError}</p>
+        <p className="mb-4">{error}</p>
         <Button
           variant="default"
           onClick={() => {
             setError(null);
-            refetch();
           }}
         >
           Retry
@@ -173,10 +145,6 @@ export default function SelectServices() {
           {/* Display specific saving error if any */}
           {error && isSaving && (
              <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">Failed to save: {error}</div>
-          )}
-
-          {allServices.length === 0 && !isLoading && (
-            <p className="text-center text-gray-500">No services available at the moment. Please check back later.</p>
           )}
 
           <div className="space-y-4 mb-8">
@@ -242,26 +210,22 @@ export default function SelectServices() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={selectedServiceIds.length === 0 || isSaving || isLoading}
+              disabled={selectedServiceIds.length === 0 || isSaving}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
-              {isLoading ? (
+              {isSaving && (
                 <>
                   <span className="mr-2">Processing...</span>
                   <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
                 </>
-              ) : (
-                "Next"
               )}
             </Button>
           </div>
           
-          {/* General error display, if not related to saving and not in loading state */}
-          {error && !isSaving && !isLoading && (
+          {/* General error display, if not related to saving */}
+          {error && !isSaving && (
              <div className="bg-red-100 text-red-700 p-4 rounded mt-4 text-center">{error}</div>
           )}
-
-          <BookingWarning />
 
         </div>
       </main>

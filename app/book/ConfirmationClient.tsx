@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { User } from "@supabase/supabase-js"
 import { useRouter, useSearchParams } from "next/navigation"
-import { updateDraft } from "@/lib/draftService"
 
 interface ConfirmationClientProps {
   user: User | null;

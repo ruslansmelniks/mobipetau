@@ -4,54 +4,56 @@ import { useState, useEffect } from "react"
 import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { Badge } from "@/components/ui/badge"
 
 export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [isOpen, setIsOpen] = useState(false)
+  const [isEnabled, setIsEnabled] = useState(true)
   const supabase = useSupabaseClient()
   const user = useUser()
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !isEnabled) return
 
-    const fetchNotifications = async () => {
+    const checkNotifications = async () => {
       try {
-        // First check if notifications table exists
-        const { data, error } = await supabase
+        // Try with is_read first
+        let { count, error } = await supabase
           .from('notifications')
-          .select('*')
+          .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('read', false)
-          .order('created_at', { ascending: false })
-          .limit(10)
+          .eq('is_read', false)
+
+        // If error, try with 'read' column
+        if (error && error.message.includes('column')) {
+          console.log('Trying alternative column name...');
+          const result = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('read', false)
+          
+          count = result.count
+          error = result.error
+        }
 
         if (error) {
-          // If table doesn't exist or other error, just silently fail
           console.log('Notifications not available:', error.message)
+          setIsEnabled(false)
           return
         }
 
-        if (data) {
-          setNotifications(data)
-          setUnreadCount(data.length)
-        }
+        setUnreadCount(count || 0)
       } catch (err) {
-        console.log('Error fetching notifications:', err)
+        console.log('Error checking notifications:', err)
+        setIsEnabled(false)
       }
     }
 
-    fetchNotifications()
+    checkNotifications()
 
-    // Set up realtime subscription with error handling
-    const channel = supabase
-      .channel(`notifications:${user.id}`)
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel('notifications')
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -60,62 +62,33 @@ export function NotificationBell() {
           filter: `user_id=eq.${user.id}`
         }, 
         () => {
-          fetchNotifications()
+          checkNotifications()
         }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user, supabase])
+    // Poll every 30 seconds as backup
+    const interval = setInterval(checkNotifications, 30000)
 
-  const markAsRead = async (notificationId: string) => {
-    try {
-      await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', notificationId)
-    } catch (err) {
-      console.log('Error marking notification as read:', err)
+    return () => {
+      subscription.unsubscribe()
+      clearInterval(interval)
     }
+  }, [user, supabase, isEnabled])
+
+  // Don't render if notifications are disabled
+  if (!isEnabled || !user) {
+    return null
   }
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center bg-red-500">
-              {unreadCount}
-            </Badge>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80">
-        <div className="space-y-2">
-          <h3 className="font-medium">Notifications</h3>
-          {notifications.length === 0 ? (
-            <p className="text-sm text-gray-500">No new notifications</p>
-          ) : (
-            <div className="space-y-2">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className="p-2 hover:bg-gray-50 rounded cursor-pointer"
-                  onClick={() => markAsRead(notification.id)}
-                >
-                  <p className="text-sm">{notification.message}</p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(notification.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <Button variant="ghost" size="icon" className="relative">
+      <Bell className="h-5 w-5" />
+      {unreadCount > 0 && (
+        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </Button>
   )
 } 
