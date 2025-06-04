@@ -29,62 +29,97 @@ export default function VetJobsPage() {
   const fetchAvailableJobs = async () => {
     setLoading(true);
     try {
-      // First, fetch appointments with pets only
-      const { data, error } = await supabase
+      // Step 1: Fetch appointments without any joins
+      const { data: appointmentsData, error: appointmentsError } = await supabase
         .from("appointments")
-        .select(`
-          *,
-          pets:pet_id (*)
-        `)
+        .select("*")
         .in("status", ["waiting_for_vet", "confirmed"])
         .order("created_at", { ascending: false });
       
-      if (error) {
-        console.error("Error fetching jobs:", error);
+      if (appointmentsError) {
+        console.error("Error fetching appointments:", appointmentsError);
         toast({
           title: "Error",
           description: "Failed to fetch available jobs",
           variant: "destructive",
         });
         setJobs([]);
-      } else {
-        let newJobs = data || [];
-        // Fetch pet owner details separately
-        if (newJobs.length > 0) {
-          const ownerIds = [...new Set(newJobs.map(apt => apt.pet_owner_id))];
-          const { data: owners } = await supabase
-            .from("users")
-            .select("id, email, first_name, last_name, phone")
-            .in("id", ownerIds);
-          // Map owners to appointments
-          newJobs = newJobs.map(apt => ({
-            ...apt,
-            pet_owner: owners?.find(owner => owner.id === apt.pet_owner_id) || null
-          }));
-        }
-        setJobs(newJobs);
-        
-        // Check for new jobs
-        const currentJobIds = new Set(newJobs.map(job => job.id));
-        let newCount = 0;
-        currentJobIds.forEach(id => {
-          if (!previousJobIds.has(id)) {
-            newCount++;
-          }
-        });
-        
-        if (newCount > 0 && previousJobIds.size > 0) {
-          toast({
-            title: "New Job Available!",
-            description: `${newCount} new ${newCount === 1 ? 'job' : 'jobs'} available`,
-          });
-        }
-        
-        setPreviousJobIds(currentJobIds);
-        setNewJobCount(newCount);
+        return;
       }
+
+      if (!appointmentsData || appointmentsData.length === 0) {
+        setJobs([]);
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Get unique pet IDs
+      const petIds = [...new Set(appointmentsData.map(apt => apt.pet_id).filter(Boolean))];
+      
+      // Step 3: Fetch pets separately
+      let petsData: any[] = [];
+      if (petIds.length > 0) {
+        const { data: pets, error: petsError } = await supabase
+          .from("pets")
+          .select("*")
+          .in("id", petIds);
+        
+        if (!petsError && pets) {
+          petsData = pets;
+        }
+      }
+
+      // Step 4: Get unique owner IDs
+      const ownerIds = [...new Set(appointmentsData.map(apt => apt.pet_owner_id).filter(Boolean))];
+      
+      // Step 5: Fetch owners separately
+      let ownersData: any[] = [];
+      if (ownerIds.length > 0) {
+        const { data: owners, error: ownersError } = await supabase
+          .from("users")
+          .select("id, email, first_name, last_name, phone")
+          .in("id", ownerIds);
+        
+        if (!ownersError && owners) {
+          ownersData = owners;
+        }
+      }
+
+      // Step 6: Combine the data
+      const jobsWithDetails = appointmentsData.map(apt => ({
+        ...apt,
+        pets: petsData.find(pet => pet.id === apt.pet_id) || null,
+        pet_owner: ownersData.find(owner => owner.id === apt.pet_owner_id) || null
+      }));
+
+      setJobs(jobsWithDetails);
+      
+      // Check for new jobs notification logic...
+      const currentJobIds = new Set(jobsWithDetails.map(job => job.id));
+      let newCount = 0;
+      currentJobIds.forEach(id => {
+        if (!previousJobIds.has(id)) {
+          newCount++;
+        }
+      });
+      
+      if (newCount > 0 && previousJobIds.size > 0) {
+        toast({
+          title: "New Job Available!",
+          description: `${newCount} new ${newCount === 1 ? 'job' : 'jobs'} available`,
+        });
+      }
+      
+      setPreviousJobIds(currentJobIds);
+      setNewJobCount(newCount);
+      
     } catch (err) {
       console.error("Error in fetchAvailableJobs:", err);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
       setJobs([]);
     } finally {
       setLoading(false);
