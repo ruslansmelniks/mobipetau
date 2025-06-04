@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, MapPin } from "lucide-react"
 import Link from "next/link"
+import { AppointmentDetailsModal } from "@/components/appointment-details-modal"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,6 +47,8 @@ export default function BookingsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
     if (!user) return;
@@ -86,6 +89,11 @@ export default function BookingsPage() {
 
     fetchAppointments();
   }, [user]);
+
+  const handleViewDetails = (appointment: any) => {
+    setSelectedAppointment(appointment)
+    setIsModalOpen(true)
+  }
 
   if (isLoading) {
     return (
@@ -163,10 +171,12 @@ export default function BookingsPage() {
                     </div>
                   </CardContent>
                   <CardFooter>
-                    <Button variant="outline" asChild className="w-full">
-                      <Link href={`/portal/bookings/${appointment.id}`}>
-                        View Details
-                      </Link>
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => handleViewDetails(appointment)}
+                    >
+                      View Details
                     </Button>
                   </CardFooter>
                 </Card>
@@ -175,6 +185,16 @@ export default function BookingsPage() {
           )}
         </div>
       </main>
+      {selectedAppointment && (
+        <AppointmentDetailsModal
+          appointment={selectedAppointment}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false)
+            setSelectedAppointment(null)
+          }}
+        />
+      )}
     </div>
   );
 }
