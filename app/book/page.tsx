@@ -156,20 +156,36 @@ export default function BookAppointment() {
               className="space-y-4 mb-8"
             >
               {pets.map((pet) => {
-                // Determine species icon
-                let speciesIcon = <PawPrint className="inline-block h-4 w-4 text-teal-600 mr-1" />;
-                if (pet.species?.toLowerCase().includes("dog")) speciesIcon = <Dog className="inline-block h-4 w-4 text-teal-600 mr-1" />;
-                if (pet.species?.toLowerCase().includes("cat")) speciesIcon = <Cat className="inline-block h-4 w-4 text-teal-600 mr-1" />;
-                // Gender icon
-                let genderIcon = null;
-                if (pet.gender?.toLowerCase() === "male" || pet.gender === "M") genderIcon = <span className="inline-block text-blue-500 mr-1" title="Male">♂</span>;
-                if (pet.gender?.toLowerCase() === "female" || pet.gender === "F") genderIcon = <span className="inline-block text-pink-500 mr-1" title="Female">♀</span>;
-                // Age string
-                let ageString = pet.age ? pet.age : (pet.dateOfBirth ? calculateAge(pet.dateOfBirth) : null);
+                // Calculate age display
+                const getAgeDisplay = (pet: any) => {
+                  if (pet.age && pet.age_unit) {
+                    const unit = pet.age_unit === 'years' ? 'yr' : pet.age_unit === 'months' ? 'mo' : pet.age_unit;
+                    return `${pet.age} ${unit}${pet.age > 1 ? 's' : ''}`;
+                  } else if (pet.date_of_birth) {
+                    return calculateAge(pet.date_of_birth);
+                  }
+                  return null;
+                };
+
+                // Get gender display
+                const getGenderDisplay = (gender: string) => {
+                  const genderMap: Record<string, { icon: string; label: string; color: string }> = {
+                    'male': { icon: '♂', label: 'Male', color: 'text-blue-500' },
+                    'female': { icon: '♀', label: 'Female', color: 'text-pink-500' },
+                    'unknown': { icon: '?', label: 'Unknown', color: 'text-gray-400' }
+                  };
+                  return genderMap[gender?.toLowerCase()] || genderMap['unknown'];
+                };
+
+                const ageDisplay = getAgeDisplay(pet);
+                const genderInfo = getGenderDisplay(pet.gender);
+
                 return (
                   <div
                     key={pet.id}
-                    className={`border rounded-xl p-4 flex flex-row items-center bg-white transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-teal-300 group min-h-[100px] relative ${selectedPet === pet.id ? "border-teal-500 ring-2 ring-teal-400 shadow-lg" : ""}`}
+                    className={`border rounded-xl p-5 flex flex-row items-center bg-white transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-teal-300 group relative ${
+                      selectedPet === pet.id ? "border-teal-500 ring-2 ring-teal-400 shadow-lg" : ""
+                    }`}
                     onClick={() => handlePetSelect(pet.id)}
                   >
                     <div className="flex-shrink-0 flex items-center justify-center mr-4">
@@ -180,32 +196,67 @@ export default function BookAppointment() {
                         checked={selectedPet === pet.id}
                       />
                     </div>
-                    <div className="w-[72px] h-[72px] overflow-hidden flex items-center justify-center rounded-lg bg-gray-100 border border-gray-200 mr-6 flex-shrink-0">
+
+                    {/* Pet Image */}
+                    <div className="w-20 h-20 overflow-hidden rounded-lg bg-gray-100 border border-gray-200 mr-4 flex-shrink-0">
                       {pet.image ? (
                         <Image
-                          src={pet.image || "/placeholder.svg"}
+                          src={pet.image}
                           alt={pet.name}
-                          width={72}
-                          height={72}
+                          width={80}
+                          height={80}
                           className="object-cover w-full h-full"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                          {speciesIcon}
+                        <div className="w-full h-full flex items-center justify-center">
+                          {pet.type?.toLowerCase() === 'dog' ? (
+                            <Dog className="h-8 w-8 text-gray-400" />
+                          ) : pet.type?.toLowerCase() === 'cat' ? (
+                            <Cat className="h-8 w-8 text-gray-400" />
+                          ) : (
+                            <PawPrint className="h-8 w-8 text-gray-400" />
+                          )}
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0 text-left">
-                      <h3 className="font-semibold text-lg mb-1 truncate">{pet.name}</h3>
-                      <div className="text-gray-600 text-sm flex items-center mb-1">
-                        {speciesIcon}
-                        <span className="truncate">{pet.species}{pet.breed ? ` - ${pet.breed}` : ""}</span>
+
+                    {/* Pet Information */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between mb-1">
+                        <h3 className="font-semibold text-lg text-gray-900">{pet.name}</h3>
                       </div>
-                      <div className="text-gray-500 text-xs flex items-center gap-2">
-                        {genderIcon}
-                        {pet.gender && <span>{pet.gender[0].toUpperCase()}</span>}
-                        {pet.gender && ageString && <span className="mx-1">•</span>}
-                        {ageString && <span>{ageString}</span>}
+
+                      {/* Species and Breed */}
+                      <p className="text-sm text-gray-600 mb-2">
+                        {pet.type || 'Pet'}
+                        {pet.breed && ` • ${pet.breed}`}
+                      </p>
+
+                      {/* Additional Info Row */}
+                      <div className="flex items-center gap-4 text-sm">
+                        {/* Gender */}
+                        {pet.gender && (
+                          <div className="flex items-center gap-1">
+                            <span className={`text-lg ${genderInfo.color}`} title={genderInfo.label}>
+                              {genderInfo.icon}
+                            </span>
+                            <span className="text-gray-600">{genderInfo.label}</span>
+                          </div>
+                        )}
+
+                        {/* Age */}
+                        {ageDisplay && (
+                          <div className="flex items-center gap-1 text-gray-600">
+                            <span>{ageDisplay} old</span>
+                          </div>
+                        )}
+
+                        {/* Weight */}
+                        {pet.weight && (
+                          <div className="flex items-center gap-1 text-gray-600">
+                            <span>{pet.weight} lbs</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
