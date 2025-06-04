@@ -29,22 +29,16 @@ export default function VetJobsPage() {
   const fetchAvailableJobs = async () => {
     setLoading(true);
     try {
+      // First, fetch appointments with pets only
       const { data, error } = await supabase
         .from("appointments")
         .select(`
           *,
-          pets:pet_id (*),
-          pet_owner:pet_owner_id (
-            id,
-            email,
-            first_name,
-            last_name,
-            phone
-          )
+          pets:pet_id (*)
         `)
         .in("status", ["waiting_for_vet", "confirmed"])
         .order("created_at", { ascending: false });
-        
+      
       if (error) {
         console.error("Error fetching jobs:", error);
         toast({
@@ -54,7 +48,20 @@ export default function VetJobsPage() {
         });
         setJobs([]);
       } else {
-        const newJobs = data || [];
+        let newJobs = data || [];
+        // Fetch pet owner details separately
+        if (newJobs.length > 0) {
+          const ownerIds = [...new Set(newJobs.map(apt => apt.pet_owner_id))];
+          const { data: owners } = await supabase
+            .from("users")
+            .select("id, email, first_name, last_name, phone")
+            .in("id", ownerIds);
+          // Map owners to appointments
+          newJobs = newJobs.map(apt => ({
+            ...apt,
+            pet_owner: owners?.find(owner => owner.id === apt.pet_owner_id) || null
+          }));
+        }
         setJobs(newJobs);
         
         // Check for new jobs
