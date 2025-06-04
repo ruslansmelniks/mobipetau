@@ -11,6 +11,7 @@ export function VetPortalTabs() {
 
   const tabs = [
     { name: "Profile", href: "/vet/profile" },
+    { name: "Jobs", href: "/vet/jobs" },
     { name: "Appointments", href: "/vet/appointments" },
     { name: "Messages", href: "/vet/messages" },
   ]
