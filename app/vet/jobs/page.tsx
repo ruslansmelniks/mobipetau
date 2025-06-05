@@ -36,24 +36,14 @@ export default function VetJobsPage() {
   const fetchAvailableJobs = async () => {
     setLoading(true);
     try {
-      // Fetch appointments with pet data only - avoid fetching users table
-      const { data: appointmentsData, error: appointmentsError } = await supabase
-        .from("appointments")
-        .select(`
-          *,
-          pets:pet_id (
-            id,
-            name,
-            type,
-            breed,
-            image
-          )
-        `)
-        .in("status", ["waiting_for_vet", "time_proposed"])
+      // Use the view instead of complex joins
+      const { data: jobsData, error: jobsError } = await supabase
+        .from("available_vet_jobs")
+        .select("*")
         .order("created_at", { ascending: false });
       
-      if (appointmentsError) {
-        console.error("Error fetching appointments:", appointmentsError);
+      if (jobsError) {
+        console.error("Error fetching jobs:", jobsError);
         toast({
           title: "Error",
           description: "Failed to fetch available jobs",
@@ -63,15 +53,20 @@ export default function VetJobsPage() {
         return;
       }
 
-      // Process appointments without owner details
-      const jobsWithDetails = (appointmentsData || []).map(apt => ({
-        ...apt,
-        pets: apt.pets || { name: "Unknown Pet", type: "Pet" },
-        // We'll avoid fetching owner details to prevent RLS issues
-        pet_owner: { 
-          first_name: "Pet", 
-          last_name: "Owner",
-          email: "Contact through messages"
+      // Transform the data to match your existing structure
+      const jobsWithDetails = (jobsData || []).map(job => ({
+        ...job,
+        pets: {
+          name: job.pet_name || "Unknown Pet",
+          type: job.pet_type || "Pet",
+          breed: job.pet_breed,
+          image: job.pet_image
+        },
+        pet_owner: {
+          first_name: job.owner_first_name || "Unknown",
+          last_name: job.owner_last_name || "Owner",
+          email: job.owner_email,
+          phone: job.owner_phone
         }
       }));
 
