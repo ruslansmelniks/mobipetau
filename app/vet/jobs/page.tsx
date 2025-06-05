@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import { Calendar, Clock, MapPin, Check, X, Clock4, RefreshCw, Loader2, CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,26 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
+
+interface Job {
+  id: string;
+  date: string;
+  time: string;
+  status: string;
+  pets: {
+    name: string;
+    type: string;
+    breed?: string;
+    image?: string;
+  };
+  pet_owner: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+  };
+  created_at: string;
+}
 
 // Time slot options
 const timeSlots = [
@@ -36,7 +56,7 @@ const isValidUUID = (uuid: string): boolean => {
 };
 
 export default function VetJobsPage() {
-  const [jobs, setJobs] = useState<any[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [proposedDates, setProposedDates] = useState<Record<string, Date | undefined>>({})
@@ -48,10 +68,11 @@ export default function VetJobsPage() {
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false)
+  const [hasFetchedInitially, setHasFetchedInitially] = useState(false)
   const user = useUser()
   const supabase = useSupabaseClient()
 
-  const fetchAvailableJobs = async (isBackgroundRefresh = false) => {
+  const fetchAvailableJobs = useCallback(async (isBackgroundRefresh = false) => {
     if (!isBackgroundRefresh) {
       setLoading(true);
     } else {
@@ -177,7 +198,7 @@ export default function VetJobsPage() {
         setIsBackgroundRefreshing(false);
       }
     }
-  };
+  }, [supabase, previousJobIds, proposedDates]);
 
   // Add loading timeout effect
   useEffect(() => {
@@ -197,19 +218,29 @@ export default function VetJobsPage() {
     return () => clearTimeout(loadingTimeout);
   }, [loading]);
 
+  // Initial fetch effect
   useEffect(() => {
     if (!user) return;
-    fetchAvailableJobs();
+    
+    // Only fetch once initially
+    if (!hasFetchedInitially) {
+      setHasFetchedInitially(true);
+      fetchAvailableJobs();
+    }
+  }, [user, hasFetchedInitially, fetchAvailableJobs]);
 
-    // Add auto-refresh every 30 seconds only if enabled
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!user || !autoRefreshEnabled) return;
+    
     const interval = setInterval(() => {
-      if (autoRefreshEnabled && !loading) {
+      if (!loading) {
         fetchAvailableJobs(true);
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [user, supabase, autoRefreshEnabled, loading]);
+  }, [user, autoRefreshEnabled, loading, fetchAvailableJobs]);
 
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
