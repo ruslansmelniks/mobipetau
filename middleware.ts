@@ -74,34 +74,33 @@ export async function middleware(request: NextRequest) {
 
     const userRole = profile?.role || 'pet_owner'
 
-    // Allow access to portal routes based on role
-    if (path.startsWith('/portal/vet') && userRole !== 'vet') {
-      logger.warn('Non-vet user attempting to access vet area', {
-        userId: session.user.id,
-        role: userRole,
-        path: path
-      }, request)
-      return NextResponse.redirect(new URL('/portal/bookings', request.url))
+    // Redirect admins and vets to their respective portals if accessing pet owner routes
+    if (path.startsWith('/portal/') && !path.startsWith('/portal/vet') && !path.startsWith('/portal/admin')) {
+      if (userRole === 'admin') {
+        return NextResponse.redirect(new URL('/admin', request.url))
+      } else if (userRole === 'vet') {
+        return NextResponse.redirect(new URL('/vet', request.url))
+      }
     }
 
-    // Enforce role-based access control
-    if (path.startsWith('/portal') && userRole !== 'admin') {
+    // Redirect vets trying to access admin routes
+    if (path.startsWith('/admin') && userRole !== 'admin') {
       logger.warn('Non-admin user attempting to access admin area', {
         userId: session.user.id,
         role: userRole,
         path: path
       }, request)
-      return NextResponse.redirect(new URL('/portal/bookings', request.url))
+      return NextResponse.redirect(new URL(userRole === 'vet' ? '/vet' : '/portal/bookings', request.url))
     }
 
-    // Optional: Redirect pet owners away from other portals
-    if (path.startsWith('/portal') && (userRole === 'admin' || userRole === 'vet')) {
-      logger.info('Admin/Vet accessing pet owner portal, redirecting', {
+    // Redirect non-vets trying to access vet routes
+    if (path.startsWith('/vet') && userRole !== 'vet') {
+      logger.warn('Non-vet user attempting to access vet area', {
         userId: session.user.id,
         role: userRole,
         path: path
       }, request)
-      return NextResponse.redirect(new URL('/portal/bookings', request.url))
+      return NextResponse.redirect(new URL(userRole === 'admin' ? '/admin' : '/portal/bookings', request.url))
     }
   }
 

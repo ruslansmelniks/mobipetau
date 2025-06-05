@@ -49,14 +49,18 @@ export default function LoginPage() {
         return;
       }
 
-      logger.info('Login successful', { 
+      logger.info('Login successful with role detection', { 
         userId: data.user?.id,
         email: data.user?.email,
-        role: data.user?.user_metadata?.role || data.user?.app_metadata?.role
+        metadataRole: data.user?.user_metadata?.role,
+        appMetadataRole: data.user?.app_metadata?.role,
+        finalRole: data.user?.user_metadata?.role || data.user?.app_metadata?.role || 'pet_owner'
       });
       
-      // Check user role from metadata
-      const userRole = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
+      // Check user role from metadata with better fallback
+      const userRole = data.user?.user_metadata?.role || 
+                      data.user?.app_metadata?.role || 
+                      'pet_owner'; // Default to pet_owner if no role is set
       
       let redirectPath = '/portal/bookings';
       if (userRole === 'admin') {

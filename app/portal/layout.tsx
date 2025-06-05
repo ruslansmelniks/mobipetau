@@ -22,6 +22,29 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       const { data: { session } } = await supabase.auth.getSession();
       if (session && session.user) {
         const currentUser = session.user as User;
+        // Check role from both metadata sources and database
+        const metadataRole = currentUser.user_metadata?.role || currentUser.app_metadata?.role;
+        let finalRole = metadataRole;
+        if (!finalRole) {
+          const { data: dbUser } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', currentUser.id)
+            .single();
+          finalRole = dbUser?.role || 'pet_owner';
+        }
+        console.log('Portal layout role check:', {
+          userId: currentUser.id,
+          metadataRole,
+          finalRole
+        });
+        // Redirect based on role
+        if (finalRole === 'admin') {
+          router.push('/admin');
+        } else if (finalRole === 'vet') {
+          router.push('/vet');
+        }
+        // Pet owners should stay in portal
         const userData: UserData = {
           ...currentUser,
           user_metadata: currentUser.user_metadata as UserProfile || {},
@@ -37,15 +60,37 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       }
       setLoading(false);
     };
-
     getSession();
-
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         setUser(null);
         router.push('/login');
       } else if (session && session.user) {
         const currentUser = session.user as User;
+        // Check role from both metadata sources and database
+        const metadataRole = currentUser.user_metadata?.role || currentUser.app_metadata?.role;
+        let finalRole = metadataRole;
+        if (!finalRole) {
+          supabase
+            .from('users')
+            .select('role')
+            .eq('id', currentUser.id)
+            .single()
+            .then(({ data: dbUser }) => {
+              finalRole = dbUser?.role || 'pet_owner';
+              if (finalRole === 'admin') {
+                router.push('/admin');
+              } else if (finalRole === 'vet') {
+                router.push('/vet');
+              }
+            });
+        } else {
+          if (finalRole === 'admin') {
+            router.push('/admin');
+          } else if (finalRole === 'vet') {
+            router.push('/vet');
+          }
+        }
         const userData: UserData = {
           ...currentUser,
           user_metadata: currentUser.user_metadata as UserProfile || {},
@@ -58,7 +103,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         }
       }
     });
-
     return () => {
       authListener?.subscription.unsubscribe();
     };
