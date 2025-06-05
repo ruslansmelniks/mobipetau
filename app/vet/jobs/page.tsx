@@ -422,11 +422,30 @@ export default function VetJobsPage() {
   };
 
   // Filter jobs before rendering
-  const filteredJobs = jobs.filter(job => {
-    if (statusFilter === 'new') return job.status === 'waiting_for_vet';
-    if (statusFilter === 'proposed') return job.status === 'time_proposed';
-    return true;
-  });
+  const filteredJobs = jobs
+    .filter(job => {
+      const matchesSearch = 
+        job.pets.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pet_owner.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pet_owner.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pet_owner.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pet_owner.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pets.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.pets.breed?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      if (statusFilter === 'all') return matchesSearch;
+      if (statusFilter === 'new') return matchesSearch && !previousJobIds.has(job.id);
+      if (statusFilter === 'proposed') return matchesSearch && job.status === 'time_proposed';
+      return matchesSearch;
+    })
+    .sort((a, b) => {
+      // First sort by status - waiting_for_vet jobs first
+      if (a.status === 'waiting_for_vet' && b.status !== 'waiting_for_vet') return -1;
+      if (a.status !== 'waiting_for_vet' && b.status === 'waiting_for_vet') return 1;
+      
+      // Then sort by created_at date
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   const renderJobCard = (job: any) => {
     const status = getStatusLabel(job.status);
