@@ -12,6 +12,7 @@ import { getStatusLabel } from "@/lib/appointment-statuses"
 import { toast } from "@/components/ui/use-toast"
 import { Textarea } from "@/components/ui/textarea"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { Label } from "@/components/ui/label"
 
 // UUID validation helper
 const isValidUUID = (uuid: string): boolean => {
@@ -35,11 +36,20 @@ export default function VetJobsPage() {
   const fetchAvailableJobs = async () => {
     setLoading(true);
     try {
-      // Step 1: Fetch appointments without any joins
+      // Fetch appointments with pet data only - avoid fetching users table
       const { data: appointmentsData, error: appointmentsError } = await supabase
         .from("appointments")
-        .select("*")
-        .in("status", ["waiting_for_vet", "confirmed"])
+        .select(`
+          *,
+          pets:pet_id (
+            id,
+            name,
+            type,
+            breed,
+            image
+          )
+        `)
+        .in("status", ["waiting_for_vet", "time_proposed"])
         .order("created_at", { ascending: false });
       
       if (appointmentsError) {
@@ -53,90 +63,21 @@ export default function VetJobsPage() {
         return;
       }
 
-      if (!appointmentsData || appointmentsData.length === 0) {
-        setJobs([]);
-        setLoading(false);
-        return;
-      }
-
-      // Filter appointments to only include those with valid IDs
-      const validAppointments = appointmentsData.filter(apt => 
-        (!apt.pet_id || isValidUUID(apt.pet_id)) && 
-        (!apt.pet_owner_id || isValidUUID(apt.pet_owner_id))
-      );
-
-      console.log("Total appointments:", appointmentsData.length);
-      console.log("Valid appointments:", validAppointments.length);
-
-      // Step 2: Get unique pet IDs and validate them
-      const petIds = [...new Set(validAppointments
-        .map(apt => apt.pet_id)
-        .filter(id => id && typeof id === 'string' && isValidUUID(id))
-      )];
-      
-      console.log("Valid Pet IDs to fetch:", petIds);
-      
-      // Step 3: Fetch pets separately with error handling
-      let petsData: any[] = [];
-      if (petIds.length > 0) {
-        try {
-          const { data: pets, error: petsError } = await supabase
-            .from("pets")
-            .select("*")
-            .in("id", petIds);
-          
-          if (petsError) {
-            console.error("Error fetching pets:", petsError);
-          } else if (pets) {
-            petsData = pets;
-          }
-        } catch (err) {
-          console.error("Exception fetching pets:", err);
+      // Process appointments without owner details
+      const jobsWithDetails = (appointmentsData || []).map(apt => ({
+        ...apt,
+        pets: apt.pets || { name: "Unknown Pet", type: "Pet" },
+        // We'll avoid fetching owner details to prevent RLS issues
+        pet_owner: { 
+          first_name: "Pet", 
+          last_name: "Owner",
+          email: "Contact through messages"
         }
-      }
-
-      // Step 4: Get unique owner IDs and validate them
-      const ownerIds = [...new Set(validAppointments
-        .map(apt => apt.pet_owner_id)
-        .filter(id => id && typeof id === 'string' && isValidUUID(id))
-      )];
-      
-      console.log("Valid Owner IDs to fetch:", ownerIds);
-      
-      // Step 5: Fetch owners separately with error handling
-      let ownersData: any[] = [];
-      if (ownerIds.length > 0) {
-        try {
-          const { data: owners, error: ownersError } = await supabase
-            .from("users")
-            .select("id, email, first_name, last_name, phone")
-            .in("id", ownerIds);
-          
-          if (ownersError) {
-            console.error("Error fetching owners:", ownersError);
-          } else if (owners) {
-            ownersData = owners;
-          }
-        } catch (err) {
-          console.error("Exception fetching owners:", err);
-        }
-      }
-
-      // Step 6: Combine the data with null checks
-      const jobsWithDetails = validAppointments.map(apt => {
-        const pet = apt.pet_id ? petsData.find(pet => pet.id === apt.pet_id) : null;
-        const owner = apt.pet_owner_id ? ownersData.find(owner => owner.id === apt.pet_owner_id) : null;
-        
-        return {
-          ...apt,
-          pets: pet || { name: "Unknown Pet", type: "Pet" }, // Fallback data
-          pet_owner: owner || { first_name: "Unknown", last_name: "Owner" } // Fallback data
-        };
-      });
+      }));
 
       setJobs(jobsWithDetails);
       
-      // Check for new jobs notification logic...
+      // Check for new jobs notification logic
       const currentJobIds = new Set(jobsWithDetails.map(job => job.id));
       let newCount = 0;
       currentJobIds.forEach(id => {
@@ -183,7 +124,7 @@ export default function VetJobsPage() {
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
     try {
-      const response = await fetch('/api/appointments/status', {
+      const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -221,9 +162,9 @@ export default function VetJobsPage() {
   };
 
   const handleDeclineJob = async (jobId: string, message?: string) => {
-    setLoading(true);
+    setLoadingActions(prev => ({ ...prev, [jobId]: 'decline' }));
     try {
-      const response = await fetch('/api/appointments/status', {
+      const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,11 +194,18 @@ export default function VetJobsPage() {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
     }
   };
 
-  const handleProposeTime = async (jobId: string, proposedTime: string, message?: string) => {
+  const handleProposeTime = async (jobId: string) => {
+    const proposedTime = proposedTimes[jobId];
+    const message = proposedMessages[jobId];
+    
     if (!proposedTime) {
       toast({
         title: "Error",
@@ -267,15 +215,16 @@ export default function VetJobsPage() {
       return;
     }
 
-    setLoading(true);
+    setLoadingActions(prev => ({ ...prev, [jobId]: 'propose' }));
     try {
-      const response = await fetch('/api/appointments/status', {
+      const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appointmentId: jobId,
           action: 'propose',
-          proposedTime,
+          proposedDate: new Date().toISOString(),
+          proposedTime: proposedTime,
           message: message || `Vet proposed a new time: ${proposedTime}`,
         }),
       });
@@ -291,8 +240,19 @@ export default function VetJobsPage() {
         description: "New time proposed successfully",
       });
       
+      // Clear the input fields for this job
+      setProposedTimes(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
+      setProposedMessages(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
+      
       await fetchAvailableJobs();
-      setProposedTimes({}); // Clear proposed times
     } catch (error: any) {
       console.error("Error proposing time:", error);
       toast({
@@ -301,7 +261,11 @@ export default function VetJobsPage() {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
     }
   };
 
@@ -314,6 +278,9 @@ export default function VetJobsPage() {
 
   const renderJobCard = (job: any) => {
     const status = getStatusLabel(job.status);
+    const isLoading = !!loadingActions[job.id];
+    const loadingAction = loadingActions[job.id];
+    
     return (
       <div key={job.id} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-6">
         <div className="p-6 border-b flex items-center gap-4">
@@ -328,23 +295,28 @@ export default function VetJobsPage() {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
-                <span>No img</span>
+                <span className="text-xs">No img</span>
               </div>
             )}
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-semibold text-lg truncate">{job.pets?.name || "Unknown Pet"}</h2>
-            <p className="text-gray-600 truncate">{job.pets?.species || job.pets?.type || "Pet"}</p>
-            <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>{status.label}</span>
+            <p className="text-gray-600 truncate">{job.pets?.type || "Pet"}</p>
+            <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>
+              {status.label}
+            </span>
           </div>
         </div>
+        
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
             <div className="flex items-start">
               <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
               <div>
                 <p className="font-medium">Requested Date</p>
-                <p className="text-gray-600">{job.date ? new Date(job.date).toLocaleDateString() : "Not specified"}</p>
+                <p className="text-gray-600">
+                  {job.date ? new Date(job.date).toLocaleDateString() : "Not specified"}
+                </p>
               </div>
             </div>
             <div className="flex items-start">
@@ -355,6 +327,7 @@ export default function VetJobsPage() {
               </div>
             </div>
           </div>
+          
           <div className="space-y-4">
             <div className="flex items-start">
               <MapPin className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
@@ -372,16 +345,131 @@ export default function VetJobsPage() {
             </div>
           </div>
         </div>
-        <div className="p-6 bg-gray-50 border-t flex flex-wrap gap-3 justify-end">
-          <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeclineJob(job.id)}>
-            <X className="mr-2 h-4 w-4" /> Decline
-          </Button>
-          <Button variant="outline" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleProposeTime(job.id, proposedTimes[job.id] || "")}>
-            <Clock4 className="mr-2 h-4 w-4" /> Propose New Time
-          </Button>
-          <Button className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]" onClick={() => handleAcceptJob(job.id)}>
-            <Check className="mr-2 h-4 w-4" /> Accept Job
-          </Button>
+        
+        {job.notes && (
+          <div className="px-6 pb-4">
+            <div className="bg-gray-50 p-4 rounded-md">
+              <p className="font-medium text-gray-700 mb-1">Issue Description:</p>
+              <p className="text-gray-600">{job.notes}</p>
+            </div>
+          </div>
+        )}
+        
+        {job.status === 'time_proposed' && job.proposed_time && (
+          <div className="px-6 pb-4">
+            <div className="bg-yellow-50 p-4 rounded-md border border-yellow-200">
+              <p className="font-medium text-yellow-800 mb-1">Proposed Time:</p>
+              <p className="text-yellow-700">{job.proposed_time}</p>
+              {job.proposed_message && (
+                <p className="text-yellow-600 text-sm mt-1">{job.proposed_message}</p>
+              )}
+            </div>
+          </div>
+        )}
+        
+        <div className="p-6 bg-gray-50 border-t">
+          {job.status === 'time_proposed' ? (
+            <div className="text-center text-gray-600">
+              Waiting for pet owner's response to the proposed time...
+            </div>
+          ) : (
+            <>
+              {/* Propose time inputs */}
+              <div className="mb-4 space-y-3">
+                <div>
+                  <Label htmlFor={`time-${job.id}`} className="text-sm font-medium">
+                    Propose a different time
+                  </Label>
+                  <Input
+                    id={`time-${job.id}`}
+                    placeholder="e.g., 2-4 PM tomorrow"
+                    value={proposedTimes[job.id] || ""}
+                    onChange={(e) => setProposedTimes(prev => ({ 
+                      ...prev, 
+                      [job.id]: e.target.value 
+                    }))}
+                    disabled={isLoading}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={`message-${job.id}`} className="text-sm font-medium">
+                    Message (optional)
+                  </Label>
+                  <Textarea
+                    id={`message-${job.id}`}
+                    placeholder="Add a message for the pet owner..."
+                    value={proposedMessages[job.id] || ""}
+                    onChange={(e) => setProposedMessages(prev => ({ 
+                      ...prev, 
+                      [job.id]: e.target.value 
+                    }))}
+                    disabled={isLoading}
+                    className="mt-1 h-20"
+                  />
+                </div>
+              </div>
+              
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-3 justify-end">
+                <Button 
+                  variant="outline" 
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50" 
+                  onClick={() => handleDeclineJob(job.id)}
+                  disabled={isLoading}
+                >
+                  {loadingAction === 'decline' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Declining...
+                    </>
+                  ) : (
+                    <>
+                      <X className="mr-2 h-4 w-4" />
+                      Decline
+                    </>
+                  )}
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" 
+                  onClick={() => handleProposeTime(job.id)}
+                  disabled={isLoading || !proposedTimes[job.id]}
+                >
+                  {loadingAction === 'propose' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Proposing...
+                    </>
+                  ) : (
+                    <>
+                      <Clock4 className="mr-2 h-4 w-4" />
+                      Propose Time
+                    </>
+                  )}
+                </Button>
+                
+                <Button 
+                  className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]" 
+                  onClick={() => handleAcceptJob(job.id)}
+                  disabled={isLoading}
+                >
+                  {loadingAction === 'accept' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      Accept Job
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -392,7 +480,7 @@ export default function VetJobsPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-bold flex items-center gap-2">
-            Incoming Jobs
+            Available Jobs
             {newJobCount > 0 && (
               <Badge variant="destructive" className="ml-2">
                 {newJobCount} new
@@ -414,8 +502,9 @@ export default function VetJobsPage() {
               variant="outline" 
               size="sm"
               onClick={fetchAvailableJobs}
+              disabled={loading}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
@@ -431,7 +520,13 @@ export default function VetJobsPage() {
         ) : (
           <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
             <h2 className="text-xl font-semibold mb-2">No jobs available</h2>
-            <p className="text-gray-600 mb-6">There are currently no new appointments waiting for a vet. Check back later!</p>
+            <p className="text-gray-600 mb-6">
+              {statusFilter === 'new' 
+                ? 'There are no new appointments waiting for a vet.' 
+                : statusFilter === 'proposed' 
+                ? 'There are no appointments awaiting owner response.'
+                : 'There are currently no appointments available. Check back later!'}
+            </p>
           </div>
         )}
       </div>
