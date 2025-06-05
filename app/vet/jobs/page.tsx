@@ -46,12 +46,18 @@ export default function VetJobsPage() {
   const [previousJobIds, setPreviousJobIds] = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'proposed'>('all')
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false)
   const user = useUser()
   const supabase = useSupabaseClient()
 
-  const fetchAvailableJobs = async () => {
-    setLoading(true);
+  const fetchAvailableJobs = async (isBackgroundRefresh = false) => {
+    if (!isBackgroundRefresh) {
+      setLoading(true);
+    } else {
+      setIsBackgroundRefreshing(true);
+    }
+    
     try {
       // Use the view instead of complex joins
       const { data: jobsData, error: jobsError } = await supabase
@@ -126,7 +132,11 @@ export default function VetJobsPage() {
       });
       setJobs([]);
     } finally {
-      setLoading(false);
+      if (!isBackgroundRefresh) {
+        setLoading(false);
+      } else {
+        setIsBackgroundRefreshing(false);
+      }
     }
   };
 
@@ -136,13 +146,13 @@ export default function VetJobsPage() {
 
     // Add auto-refresh every 30 seconds only if enabled
     const interval = setInterval(() => {
-      if (autoRefreshEnabled) {
-        fetchAvailableJobs();
+      if (autoRefreshEnabled && !loading) {
+        fetchAvailableJobs(true);
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [user, supabase, autoRefreshEnabled]);
+  }, [user, supabase, autoRefreshEnabled, loading]);
 
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
@@ -607,12 +617,15 @@ export default function VetJobsPage() {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={fetchAvailableJobs}
+                onClick={() => fetchAvailableJobs()}
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
+              {isBackgroundRefreshing && (
+                <span className="text-xs text-gray-500 ml-2">Checking for updates...</span>
+              )}
             </div>
           </div>
         </div>
