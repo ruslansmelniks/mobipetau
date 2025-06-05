@@ -2,63 +2,67 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
-import { createClient } from '@supabase/supabase-js'
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, MapPin, UserCog, Mail, Phone } from "lucide-react"
-import Link from "next/link"
-import { AppointmentDetailsModal } from "@/components/appointment-details-modal"
-import { AppointmentNotifications } from "@/components/appointment-notifications"
-import { VetProfileModal } from "@/components/vet-profile-modal"
-import { toast } from "@/components/ui/use-toast"
+import { useToast } from "@/components/ui/use-toast"
+import { AppointmentNotifications } from "../../../components/appointment-notifications"
+import { VetProfileModal } from "../../../components/vet-profile-modal"
+import { UserCog, Mail, Phone } from "lucide-react"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// Status badge component
-const StatusBadge = ({ status }: { status: string }) => {
-  const getStatusConfig = () => {
-    switch (status) {
-      case 'waiting_for_vet':
-        return { label: 'Waiting for Vet', color: 'bg-yellow-100 text-yellow-800' };
-      case 'confirmed':
-        return { label: 'Confirmed', color: 'bg-green-100 text-green-800' };
-      case 'completed':
-        return { label: 'Completed', color: 'bg-blue-100 text-blue-800' };
-      case 'cancelled':
-        return { label: 'Cancelled', color: 'bg-red-100 text-red-800' };
-      default:
-        return { label: status, color: 'bg-gray-100 text-gray-800' };
+interface Appointment {
+  id: string
+  status: string
+  date: string
+  time: string
+  reason: string
+  pets: {
+    id: string
+    name: string
+    type: string
+    breed: string
+  }
+  vet: {
+    id: string
+    email: string
+    first_name: string
+    last_name: string
+    phone?: string
+    role: string
+    vet_profiles?: {
+      specialties?: string[]
+      bio?: string
+      license_number?: string
+      years_experience?: number
     }
-  };
-
-  const { label, color } = getStatusConfig();
-  return (
-    <Badge className={`${color} font-medium`}>
-      {label}
-    </Badge>
-  );
-};
+  }
+}
 
 export default function BookingsPage() {
-  const router = useRouter();
-  const user = useUser();
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
-  const [showVetDetails, setShowVetDetails] = useState(false);
-  const supabase = useSupabaseClient();
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+  const [showVetDetails, setShowVetDetails] = useState(false)
+  const user = useUser()
+  const supabase = useSupabaseClient()
+  const { toast } = useToast()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+    
+    fetchAppointments()
+  }, [user?.id, router])
 
   const fetchAppointments = async () => {
-    if (!user) return;
+    if (!user) return
     
-    setLoading(true);
+    setLoading(true)
     try {
-      const { data, error } = await supabase
+      // First, fetch appointments with basic data
+      const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
           *,
@@ -67,52 +71,110 @@ export default function BookingsPage() {
             name,
             type,
             breed
-          ),
-          vet:vet_id (
-            id,
-            email,
-            first_name,
-            last_name,
-            phone,
-            user_metadata
           )
         `)
         .eq('pet_owner_id', user.id)
         .neq('status', 'pending')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
 
-      if (error) throw error;
-      setAppointments(data || []);
+      if (appointmentsError) throw appointmentsError
+
+      if (appointmentsData && appointmentsData.length > 0) {
+        // Get unique vet IDs
+        const vetIds = [...new Set(appointmentsData.map(apt => apt.vet_id).filter(Boolean))]
+        
+        // Fetch vet details separately
+        if (vetIds.length > 0) {
+          const { data: vetsData, error: vetsError } = await supabase
+            .from('users')
+            .select(`
+              id,
+              email,
+              first_name,
+              last_name,
+              phone,
+              role,
+              vet_profiles (
+                specialties,
+                bio,
+                license_number,
+                years_experience
+              )
+            `)
+            .in('id', vetIds)
+            .eq('role', 'vet')
+          
+          if (vetsError) throw vetsError
+
+          if (vetsData) {
+            // Create a map of vet data
+            const vetsMap = new Map(vetsData.map(vet => [vet.id, vet]))
+            
+            // Combine the data
+            const enrichedAppointments = appointmentsData.map(appointment => ({
+              ...appointment,
+              vet: appointment.vet_id ? vetsMap.get(appointment.vet_id) : null
+            }))
+
+            setAppointments(enrichedAppointments)
+          }
+        } else {
+          setAppointments(appointmentsData)
+        }
+      } else {
+        setAppointments([])
+      }
     } catch (error) {
-      console.error('Error fetching appointments:', error);
+      console.error('Error fetching appointments:', error)
       toast({
         title: "Error",
         description: "Failed to load appointments",
         variant: "destructive",
-      });
+      })
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  useEffect(() => {
-    fetchAppointments();
-  }, [user]);
+  const handleCancelAppointment = async (appointmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', appointmentId)
 
-  const handleViewDetails = (appointment: any) => {
-    setSelectedAppointment(appointment);
-    setShowVetDetails(true);
-  };
+      if (error) throw error
+
+      setAppointments(prev => 
+        prev.map(apt => 
+          apt.id === appointmentId 
+            ? { ...apt, status: 'cancelled' }
+            : apt
+        )
+      )
+
+      toast({
+        title: "Success",
+        description: "Appointment cancelled successfully",
+      })
+    } catch (error) {
+      console.error('Error cancelling appointment:', error)
+      toast({
+        title: "Error",
+        description: "Failed to cancel appointment",
+        variant: "destructive",
+      })
+    }
+  }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-center p-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your bookings...</p>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -123,63 +185,76 @@ export default function BookingsPage() {
 
       <AppointmentNotifications />
 
-      <div className="mb-8 w-full">
-        <h2 className="text-xl font-semibold mb-4">Active Bookings</h2>
-        {appointments.length === 0 ? (
-          <Card className="text-center py-12">
-            <CardContent>
-              <p className="text-gray-600 mb-4">No active bookings found.</p>
-              <p className="text-gray-500 mb-6">Book your first appointment to get started.</p>
-              <Link href="/book" className="text-teal-700 hover:underline font-medium">Book New Appointment</Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {appointments.map((appointment) => (
-              <div key={appointment.id} className="bg-white rounded-lg shadow-md overflow-hidden">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle className="text-lg">
-                        {appointment.pets?.name || 'Pet'} - {appointment.services?.map((s: any) => s.name).join(', ')}
-                      </CardTitle>
-                      <CardDescription>
-                        <div className="flex items-center gap-2 mt-2">
-                          <StatusBadge status={appointment.status} />
-                        </div>
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex items-center text-gray-600">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      <span>{new Date(appointment.date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <Clock className="h-4 w-4 mr-2" />
-                      <span>{appointment.time_slot}</span>
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <MapPin className="h-4 w-4 mr-2" />
-                      <span>{appointment.address}</span>
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter>
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={() => handleViewDetails(appointment)}
-                  >
-                    View Details
-                  </Button>
-                </CardFooter>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {appointments.map((appointment) => (
+          <div key={appointment.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold">{appointment.pets.name}</h3>
+                <p className="text-sm text-gray-600">
+                  {appointment.pets.breed} • {appointment.pets.type}
+                </p>
               </div>
-            ))}
+
+              {appointment.vet && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center">
+                    <UserCog className="mr-2 h-5 w-5" />
+                    Veterinarian
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="font-medium">Dr. {appointment.vet.first_name} {appointment.vet.last_name}</p>
+                    {appointment.vet.email && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        <Mail className="inline h-4 w-4 mr-1" />
+                        {appointment.vet.email}
+                      </p>
+                    )}
+                    {appointment.vet.phone && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        <Phone className="inline h-4 w-4 mr-1" />
+                        {appointment.vet.phone}
+                      </p>
+                    )}
+                    {appointment.vet.vet_profiles?.bio && (
+                      <p className="text-sm text-gray-600 mt-2">{appointment.vet.vet_profiles.bio}</p>
+                    )}
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-3"
+                      onClick={() => {
+                        setSelectedAppointment(appointment)
+                        setShowVetDetails(true)
+                      }}
+                    >
+                      View Full Profile
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Appointment Details</h3>
+                <div className="space-y-2">
+                  <p><strong>Date:</strong> {appointment.date}</p>
+                  <p><strong>Time:</strong> {appointment.time}</p>
+                  <p><strong>Reason:</strong> {appointment.reason}</p>
+                  <p><strong>Status:</strong> {appointment.status}</p>
+                </div>
+              </div>
+
+              {appointment.status !== 'cancelled' && (
+                <Button
+                  variant="destructive"
+                  onClick={() => handleCancelAppointment(appointment.id)}
+                >
+                  Cancel Appointment
+                </Button>
+              )}
+            </div>
           </div>
-        )}
+        ))}
       </div>
 
       {selectedAppointment?.vet && (
@@ -190,5 +265,5 @@ export default function BookingsPage() {
         />
       )}
     </div>
-  );
+  )
 }
