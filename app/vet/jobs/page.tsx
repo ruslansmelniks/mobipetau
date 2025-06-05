@@ -13,6 +13,12 @@ import { toast } from "@/components/ui/use-toast"
 import { Textarea } from "@/components/ui/textarea"
 import { ErrorBoundary } from "@/components/error-boundary"
 
+// UUID validation helper
+const isValidUUID = (uuid: string): boolean => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+};
+
 export default function VetJobsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -53,44 +59,80 @@ export default function VetJobsPage() {
         return;
       }
 
-      // Step 2: Get unique pet IDs
-      const petIds = [...new Set(appointmentsData.map(apt => apt.pet_id).filter(Boolean))];
+      // Filter appointments to only include those with valid IDs
+      const validAppointments = appointmentsData.filter(apt => 
+        (!apt.pet_id || isValidUUID(apt.pet_id)) && 
+        (!apt.pet_owner_id || isValidUUID(apt.pet_owner_id))
+      );
+
+      console.log("Total appointments:", appointmentsData.length);
+      console.log("Valid appointments:", validAppointments.length);
+
+      // Step 2: Get unique pet IDs and validate them
+      const petIds = [...new Set(validAppointments
+        .map(apt => apt.pet_id)
+        .filter(id => id && typeof id === 'string' && isValidUUID(id))
+      )];
       
-      // Step 3: Fetch pets separately
+      console.log("Valid Pet IDs to fetch:", petIds);
+      
+      // Step 3: Fetch pets separately with error handling
       let petsData: any[] = [];
       if (petIds.length > 0) {
-        const { data: pets, error: petsError } = await supabase
-          .from("pets")
-          .select("*")
-          .in("id", petIds);
-        
-        if (!petsError && pets) {
-          petsData = pets;
+        try {
+          const { data: pets, error: petsError } = await supabase
+            .from("pets")
+            .select("*")
+            .in("id", petIds);
+          
+          if (petsError) {
+            console.error("Error fetching pets:", petsError);
+          } else if (pets) {
+            petsData = pets;
+          }
+        } catch (err) {
+          console.error("Exception fetching pets:", err);
         }
       }
 
-      // Step 4: Get unique owner IDs
-      const ownerIds = [...new Set(appointmentsData.map(apt => apt.pet_owner_id).filter(Boolean))];
+      // Step 4: Get unique owner IDs and validate them
+      const ownerIds = [...new Set(validAppointments
+        .map(apt => apt.pet_owner_id)
+        .filter(id => id && typeof id === 'string' && isValidUUID(id))
+      )];
       
-      // Step 5: Fetch owners separately
+      console.log("Valid Owner IDs to fetch:", ownerIds);
+      
+      // Step 5: Fetch owners separately with error handling
       let ownersData: any[] = [];
       if (ownerIds.length > 0) {
-        const { data: owners, error: ownersError } = await supabase
-          .from("users")
-          .select("id, email, first_name, last_name, phone")
-          .in("id", ownerIds);
-        
-        if (!ownersError && owners) {
-          ownersData = owners;
+        try {
+          const { data: owners, error: ownersError } = await supabase
+            .from("users")
+            .select("id, email, first_name, last_name, phone")
+            .in("id", ownerIds);
+          
+          if (ownersError) {
+            console.error("Error fetching owners:", ownersError);
+          } else if (owners) {
+            ownersData = owners;
+          }
+        } catch (err) {
+          console.error("Exception fetching owners:", err);
         }
       }
 
-      // Step 6: Combine the data
-      const jobsWithDetails = appointmentsData.map(apt => ({
-        ...apt,
-        pets: petsData.find(pet => pet.id === apt.pet_id) || null,
-        pet_owner: ownersData.find(owner => owner.id === apt.pet_owner_id) || null
-      }));
+      // Step 6: Combine the data with null checks
+      const jobsWithDetails = validAppointments.map(apt => {
+        const pet = apt.pet_id ? petsData.find(pet => pet.id === apt.pet_id) : null;
+        const owner = apt.pet_owner_id ? ownersData.find(owner => owner.id === apt.pet_owner_id) : null;
+        
+        return {
+          ...apt,
+          pets: pet || { name: "Unknown Pet", type: "Pet" }, // Fallback data
+          pet_owner: owner || { first_name: "Unknown", last_name: "Owner" } // Fallback data
+        };
+      });
 
       setJobs(jobsWithDetails);
       
