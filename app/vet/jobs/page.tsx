@@ -426,6 +426,12 @@ export default function VetJobsPage() {
             <div className="text-center text-gray-600">
               Waiting for pet owner's response to the proposed time...
             </div>
+          ) : job.status === 'confirmed' || job.status === 'cancelled' ? (
+            <div className="text-center text-gray-600">
+              {job.status === 'confirmed' 
+                ? 'This appointment has been confirmed and cannot be modified.'
+                : 'This appointment has been declined and cannot be modified.'}
+            </div>
           ) : (
             <>
               {/* Propose time inputs */}
