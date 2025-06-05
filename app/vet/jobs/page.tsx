@@ -119,9 +119,18 @@ export default function VetJobsPage() {
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
     try {
+      // Get the session to have the auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           appointmentId: jobId,
           action: 'accept',
@@ -159,9 +168,17 @@ export default function VetJobsPage() {
   const handleDeclineJob = async (jobId: string, message?: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'decline' }));
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           appointmentId: jobId,
           action: 'decline',
@@ -212,9 +229,17 @@ export default function VetJobsPage() {
 
     setLoadingActions(prev => ({ ...prev, [jobId]: 'propose' }));
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           appointmentId: jobId,
           action: 'propose',
