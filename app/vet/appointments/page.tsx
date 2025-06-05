@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { Calendar, Clock, MapPin, Search, Check, X } from "lucide-react"
@@ -8,22 +8,63 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { useAppointments } from "@/hooks/useAppointments"
-import { useUser } from "@supabase/auth-helpers-react"
-import { AppointmentWithRelations } from "@/lib/api/appointments"
+import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { toast } from "@/components/ui/use-toast"
 
 export default function VetAppointmentsPage() {
   const user = useUser();
-  const { useUserAppointments, useUpdateAppointmentStatus } = useAppointments();
-  const { data: appointments = [], isLoading } = useUserAppointments(user?.id ?? '');
-  const updateAppointmentStatus = useUpdateAppointmentStatus();
-
+  const supabase = useSupabaseClient();
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("")
   const [proposedTime, setProposedTime] = useState("")
+
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      if (!user) return;
+      
+      setIsLoading(true);
+      try {
+        // Get the session token
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('No active session');
+        }
+
+        // Use the API endpoint to fetch appointments
+        const response = await fetch('/api/vet/appointments', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to fetch appointments');
+        }
+
+        const data = await response.json();
+        setAppointments(data.appointments || []);
+      } catch (error: any) {
+        console.error('Error fetching appointments:', error);
+        toast({
+          title: "Error",
+          description: error.message || "Failed to load appointments",
+          variant: "destructive",
+        });
+        setAppointments([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAppointments();
+  }, [user, supabase]);
 
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending_approval":
+      case "waiting_for_vet":
         return { label: "Pending approval", color: "bg-yellow-100 text-yellow-800" }
       case "confirmed":
         return { label: "Confirmed", color: "bg-green-100 text-green-800" }
@@ -44,7 +85,9 @@ export default function VetAppointmentsPage() {
       appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const pendingAppointments = filteredAppointments.filter((appointment) => appointment.status === "pending_approval")
+  const pendingAppointments = filteredAppointments.filter((appointment) => 
+    appointment.status === "pending_approval" || appointment.status === "waiting_for_vet"
+  )
   const upcomingAppointments = filteredAppointments.filter(
     (appointment) => appointment.status === "confirmed" && appointment.date && new Date(appointment.date) >= new Date()
   )
@@ -52,52 +95,9 @@ export default function VetAppointmentsPage() {
     (appointment) => appointment.status === "completed" || appointment.status === "cancelled"
   )
 
-  const handleAcceptAppointment = async (id: string) => {
-    try {
-      await updateAppointmentStatus.mutateAsync({
-        id,
-        status: 'confirmed'
-      });
-    } catch (error) {
-      console.error('Error accepting appointment:', error);
-    }
-  }
-
-  const handleProposeNewTime = async (id: string) => {
-    if (!proposedTime) return;
-    
-    try {
-      await updateAppointmentStatus.mutateAsync({
-        id,
-        status: 'pending_approval',
-        options: {
-          proposedTime,
-          message: `Vet has proposed a new time: ${proposedTime}`
-        }
-      });
-      setProposedTime("");
-    } catch (error) {
-      console.error('Error proposing new time:', error);
-    }
-  }
-
-  const handleDeclineAppointment = async (id: string) => {
-    try {
-      await updateAppointmentStatus.mutateAsync({
-        id,
-        status: 'cancelled',
-        options: {
-          message: 'Appointment declined by vet'
-        }
-      });
-    } catch (error) {
-      console.error('Error declining appointment:', error);
-    }
-  }
-
-  const renderAppointmentCard = (appointment: AppointmentWithRelations) => {
+  const renderAppointmentCard = (appointment: any) => {
     const statusInfo = getStatusLabel(appointment.status);
-    const isPending = appointment.status === "pending_approval";
+    const isPending = appointment.status === "pending_approval" || appointment.status === "waiting_for_vet";
 
     return (
       <div key={appointment.id} className="bg-white rounded-lg border shadow-sm overflow-hidden">
@@ -116,7 +116,7 @@ export default function VetAppointmentsPage() {
             </span>
           </div>
 
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div className="flex items-start">
                 <Calendar className="h-5 w-5 text-teal-500 mt-0.5 mr-3 flex-shrink-0" />
@@ -161,7 +161,7 @@ export default function VetAppointmentsPage() {
             </div>
           </div>
 
-          <div className="p-6 bg-gray-50 border-t">
+          <div className="p-6 bg-gray-50 border-t mt-6 -mx-6 -mb-6">
             <div className="flex flex-wrap justify-between gap-4">
               <Button variant="outline" asChild>
                 <Link href={`/vet/messages?appointment=${appointment.id}`}>
@@ -169,43 +169,6 @@ export default function VetAppointmentsPage() {
                 </Link>
               </Button>
               <div className="flex flex-wrap gap-3">
-                {isPending && (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => handleDeclineAppointment(appointment.id)}
-                      disabled={updateAppointmentStatus.isPending}
-                    >
-                      <X className="mr-2 h-4 w-4" />
-                      {updateAppointmentStatus.isPending ? "Declining..." : "Decline"}
-                    </Button>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Propose time (e.g., 2-4 PM)"
-                        className="w-40"
-                        value={proposedTime}
-                        onChange={(e) => setProposedTime(e.target.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        onClick={() => handleProposeNewTime(appointment.id)}
-                        disabled={!proposedTime || updateAppointmentStatus.isPending}
-                      >
-                        {updateAppointmentStatus.isPending ? "Proposing..." : "Propose Time"}
-                      </Button>
-                    </div>
-                    <Button
-                      className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-                      onClick={() => handleAcceptAppointment(appointment.id)}
-                      disabled={updateAppointmentStatus.isPending}
-                    >
-                      <Check className="mr-2 h-4 w-4" />
-                      {updateAppointmentStatus.isPending ? "Accepting..." : "Accept"}
-                    </Button>
-                  </>
-                )}
                 {appointment.status === "confirmed" && (
                   <Button 
                     className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
