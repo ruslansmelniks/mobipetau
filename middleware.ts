@@ -1,114 +1,111 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse, type NextRequest } from 'next/server';
-import { logger } from '@/lib/logger';
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+import { logger } from '@/lib/logger'
 
 export async function middleware(request: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req: request, res });
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
-  const { data: { session }, error } = await supabase.auth.getSession();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        async getAll() {
+          return request.cookies.getAll().map(({ name, value }) => ({ name, value }))
+        },
+        async setAll(cookiesToSet) {
+          for (const { name, value, ...options } of cookiesToSet) {
+            response.cookies.set({ name, value, ...options })
+          }
+        }
+      },
+    }
+  )
 
-  const { pathname } = request.nextUrl;
+  const { data: { session }, error } = await supabase.auth.getSession()
+
+  // Get the current path
+  const path = request.nextUrl.pathname
 
   // Log for debugging
   logger.debug('Middleware processing request', {
-    path: pathname,
+    path: path,
     hasSession: !!session,
     error: error ? error.message : null
-  }, request);
+  }, request)
 
   if (error) {
-    logger.error('Middleware - Supabase getSession error', { error: error.message }, request);
+    logger.error('Middleware - Supabase getSession error', { error: error.message }, request)
     // Allow request to proceed or handle error appropriately, for now, proceed
-    return res;
+    return response
   }
 
-  // If no session and trying to access protected routes, redirect to login
-  if (!session && (pathname.startsWith('/portal') || pathname.startsWith('/vet') || pathname.startsWith('/book') || pathname.startsWith('/admin'))) {
+  // If user is not signed in and the current path is not /login,
+  // redirect the user to /login
+  if (!session && path !== '/login') {
     logger.info('No session, redirecting to login', { 
-      path: pathname,
+      path: path,
       redirectTo: '/login'
-    }, request);
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirectedFrom', pathname);
-    return NextResponse.redirect(loginUrl);
+    }, request)
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // If session exists, check user role and handle role-based access
-  if (session) {
-    // Extract user role from auth metadata only
-    let userRole = session.user?.user_metadata?.role || session.user?.app_metadata?.role;
-
-    logger.debug('Middleware checking role', { 
+  // If user is signed in and the current path is /login,
+  // redirect the user to /portal/bookings
+  if (session && path === '/login') {
+    logger.info('Authenticated user on auth page, redirecting', {
       userId: session.user.id,
-      role: userRole,
-      path: pathname
-    }, request);
+      redirectPath: '/portal/bookings'
+    }, request)
+    return NextResponse.redirect(new URL('/portal/bookings', request.url))
+  }
 
-    // If on login or signup and already authenticated, redirect based on role
-    if (pathname === '/login' || pathname === '/signup') {
-      let redirectPath = '/portal/bookings';
-      if (userRole === 'admin') {
-        redirectPath = '/admin';
-      } else if (userRole === 'vet') {
-        redirectPath = '/vet';
-      }
+  // If user is signed in and trying to access /portal/* without proper role
+  if (session && path.startsWith('/portal/')) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', session.user.id)
+      .single()
 
-      logger.info('Authenticated user on auth page, redirecting', {
-        userId: session.user.id,
-        role: userRole,
-        redirectPath
-      }, request);
+    const userRole = profile?.role || 'pet_owner'
 
-      return NextResponse.redirect(new URL(redirectPath, request.url));
-    }
-
-    // Enforce role-based access control
-    if (pathname.startsWith('/admin') && userRole !== 'admin') {
-      logger.warn('Non-admin user attempting to access admin area', {
-        userId: session.user.id,
-        role: userRole,
-        path: pathname
-      }, request);
-
-      if (userRole === 'vet') {
-        return NextResponse.redirect(new URL('/vet', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/portal/bookings', request.url));
-      }
-    }
-
-    if (pathname.startsWith('/vet') && userRole !== 'vet') {
+    // Allow access to portal routes based on role
+    if (path.startsWith('/portal/vet') && userRole !== 'vet') {
       logger.warn('Non-vet user attempting to access vet area', {
         userId: session.user.id,
         role: userRole,
-        path: pathname
-      }, request);
-
-      if (userRole === 'admin') {
-        return NextResponse.redirect(new URL('/admin', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/portal/bookings', request.url));
-      }
+        path: path
+      }, request)
+      return NextResponse.redirect(new URL('/portal/bookings', request.url))
     }
-    
+
+    // Enforce role-based access control
+    if (path.startsWith('/portal') && userRole !== 'admin') {
+      logger.warn('Non-admin user attempting to access admin area', {
+        userId: session.user.id,
+        role: userRole,
+        path: path
+      }, request)
+      return NextResponse.redirect(new URL('/portal/bookings', request.url))
+    }
+
     // Optional: Redirect pet owners away from other portals
-    if (pathname.startsWith('/portal') && (userRole === 'admin' || userRole === 'vet')) {
+    if (path.startsWith('/portal') && (userRole === 'admin' || userRole === 'vet')) {
       logger.info('Admin/Vet accessing pet owner portal, redirecting', {
         userId: session.user.id,
         role: userRole,
-        path: pathname
-      }, request);
-
-      if (userRole === 'admin') {
-        return NextResponse.redirect(new URL('/admin', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/vet', request.url));
-      }
+        path: path
+      }, request)
+      return NextResponse.redirect(new URL('/portal/bookings', request.url))
     }
   }
 
-  return res;
+  return response
 }
 
 // Only run middleware on specific paths
@@ -120,8 +117,7 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
-     * - api (API routes, uncomment if you want middleware to skip them for now)
      */
-    '/((?!_next/static|_next/image|favicon.ico|public|api/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
-}; 
+} 
