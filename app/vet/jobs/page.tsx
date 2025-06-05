@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { Calendar, Clock, MapPin, Check, X, Clock4, RefreshCw, Loader2 } from "lucide-react"
+import { Calendar, Clock, MapPin, Check, X, Clock4, RefreshCw, Loader2, CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +13,21 @@ import { toast } from "@/components/ui/use-toast"
 import { Textarea } from "@/components/ui/textarea"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { format } from "date-fns"
+import { cn } from "@/lib/utils"
+
+// Time slot options
+const timeSlots = [
+  '06:00 - 08:00 AM',
+  '08:00 - 10:00 AM',
+  '10:00 AM - 12:00 PM',
+  '12:00 - 02:00 PM',
+  '02:00 - 04:00 PM',
+  '04:00 - 06:00 PM',
+  '06:00 - 08:00 PM',
+]
 
 // UUID validation helper
 const isValidUUID = (uuid: string): boolean => {
@@ -24,12 +39,14 @@ export default function VetJobsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const [proposedDates, setProposedDates] = useState<Record<string, Date | undefined>>({})
   const [proposedTimes, setProposedTimes] = useState<Record<string, string>>({})
   const [proposedMessages, setProposedMessages] = useState<Record<string, string>>({})
   const [newJobCount, setNewJobCount] = useState(0)
   const [previousJobIds, setPreviousJobIds] = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'proposed'>('all')
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const user = useUser()
   const supabase = useSupabaseClient()
 
@@ -72,6 +89,15 @@ export default function VetJobsPage() {
 
       setJobs(jobsWithDetails);
       
+      // Initialize proposed dates with the requested dates
+      const newProposedDates: Record<string, Date | undefined> = {};
+      jobsWithDetails.forEach(job => {
+        if (job.date && !proposedDates[job.id]) {
+          newProposedDates[job.id] = new Date(job.date);
+        }
+      });
+      setProposedDates(prev => ({ ...prev, ...newProposedDates }));
+      
       // Check for new jobs notification logic
       const currentJobIds = new Set(jobsWithDetails.map(job => job.id));
       let newCount = 0;
@@ -108,13 +134,15 @@ export default function VetJobsPage() {
     if (!user) return;
     fetchAvailableJobs();
 
-    // Add auto-refresh every 30 seconds for new jobs
+    // Add auto-refresh every 30 seconds only if enabled
     const interval = setInterval(() => {
-      fetchAvailableJobs();
+      if (autoRefreshEnabled) {
+        fetchAvailableJobs();
+      }
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [user, supabase]);
+  }, [user, supabase, autoRefreshEnabled]);
 
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
@@ -215,13 +243,14 @@ export default function VetJobsPage() {
   };
 
   const handleProposeTime = async (jobId: string) => {
+    const proposedDate = proposedDates[jobId];
     const proposedTime = proposedTimes[jobId];
     const message = proposedMessages[jobId];
     
-    if (!proposedTime) {
+    if (!proposedDate || !proposedTime) {
       toast({
         title: "Error",
-        description: "Please enter a proposed time",
+        description: "Please select both a date and time",
         variant: "destructive",
       });
       return;
@@ -243,9 +272,9 @@ export default function VetJobsPage() {
         body: JSON.stringify({
           appointmentId: jobId,
           action: 'propose',
-          proposedDate: new Date().toISOString(),
+          proposedDate: proposedDate.toISOString(),
           proposedTime: proposedTime,
-          message: message || `Vet proposed a new time: ${proposedTime}`,
+          message: message || `Vet proposed a new time: ${format(proposedDate, 'PPP')} at ${proposedTime}`,
         }),
       });
 
@@ -261,6 +290,11 @@ export default function VetJobsPage() {
       });
       
       // Clear the input fields for this job
+      setProposedDates(prev => {
+        const newState = { ...prev };
+        delete newState[jobId];
+        return newState;
+      });
       setProposedTimes(prev => {
         const newState = { ...prev };
         delete newState[jobId];
@@ -397,21 +431,58 @@ export default function VetJobsPage() {
               {/* Propose time inputs */}
               <div className="mb-4 space-y-3">
                 <div>
-                  <Label htmlFor={`time-${job.id}`} className="text-sm font-medium">
-                    Propose a different time
+                  <Label htmlFor={`date-${job.id}`} className="text-sm font-medium">
+                    Propose a different date
                   </Label>
-                  <Input
-                    id={`time-${job.id}`}
-                    placeholder="e.g., 2-4 PM tomorrow"
-                    value={proposedTimes[job.id] || ""}
-                    onChange={(e) => setProposedTimes(prev => ({ 
-                      ...prev, 
-                      [job.id]: e.target.value 
-                    }))}
-                    disabled={isLoading}
-                    className="mt-1"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id={`date-${job.id}`}
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal mt-1",
+                          !proposedDates[job.id] && "text-muted-foreground"
+                        )}
+                        disabled={isLoading}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {proposedDates[job.id] ? format(proposedDates[job.id]!, "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={proposedDates[job.id]}
+                        onSelect={(date) => setProposedDates(prev => ({ ...prev, [job.id]: date }))}
+                        disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
+                
+                <div>
+                  <Label htmlFor={`time-${job.id}`} className="text-sm font-medium">
+                    Select time slot
+                  </Label>
+                  <Select
+                    value={proposedTimes[job.id] || ""}
+                    onValueChange={(value) => setProposedTimes(prev => ({ ...prev, [job.id]: value }))}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger id={`time-${job.id}`} className="mt-1">
+                      <SelectValue placeholder="Select a time slot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timeSlots.map((slot) => (
+                        <SelectItem key={slot} value={slot}>
+                          {slot}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
                 <div>
                   <Label htmlFor={`message-${job.id}`} className="text-sm font-medium">
                     Message (optional)
@@ -455,7 +526,7 @@ export default function VetJobsPage() {
                   variant="outline" 
                   className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" 
                   onClick={() => handleProposeTime(job.id)}
-                  disabled={isLoading || !proposedTimes[job.id]}
+                  disabled={isLoading || !proposedDates[job.id] || !proposedTimes[job.id]}
                 >
                   {loadingAction === 'propose' ? (
                     <>
@@ -518,15 +589,25 @@ export default function VetJobsPage() {
                 <SelectItem value="proposed">Awaiting Response</SelectItem>
               </SelectContent>
             </Select>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={fetchAvailableJobs}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+                title={autoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}
+              >
+                <RefreshCw className={`h-4 w-4 ${autoRefreshEnabled ? 'text-teal-600' : 'text-gray-400'}`} />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={fetchAvailableJobs}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
 
