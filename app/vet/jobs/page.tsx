@@ -58,41 +58,80 @@ export default function VetJobsPage() {
       setIsBackgroundRefreshing(true);
     }
     
+    console.log('Starting to fetch available jobs...');
+    
     try {
-      // Use the view instead of complex joins
-      const { data: jobsData, error: jobsError } = await supabase
+      // First try the view
+      let { data: jobsData, error: jobsError } = await supabase
         .from("available_vet_jobs")
         .select("*")
         .order("created_at", { ascending: false });
       
+      console.log('View query response:', { jobsData, jobsError });
+      
+      // If view fails, try direct query as fallback
       if (jobsError) {
-        console.error("Error fetching jobs:", jobsError);
-        toast({
-          title: "Error",
-          description: "Failed to fetch available jobs",
-          variant: "destructive",
-        });
-        setJobs([]);
-        return;
-      }
-
-      // Transform the data to match your existing structure
-      const jobsWithDetails = (jobsData || []).map(job => ({
-        ...job,
-        pets: {
-          name: job.pet_name || "Unknown Pet",
-          type: job.pet_type || "Pet",
-          breed: job.pet_breed,
-          image: job.pet_image
-        },
-        pet_owner: {
-          first_name: job.owner_first_name || "Unknown",
-          last_name: job.owner_last_name || "Owner",
-          email: job.owner_email,
-          phone: job.owner_phone
+        console.warn("View 'available_vet_jobs' failed, trying direct query:", jobsError);
+        
+        // Fallback: Query appointments directly
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from("appointments")
+          .select(`
+            *,
+            pets:pet_id (
+              id,
+              name,
+              type,
+              breed,
+              image
+            ),
+            pet_owner:pet_owner_id (
+              id,
+              email,
+              first_name,
+              last_name,
+              phone
+            )
+          `)
+          .eq("status", "waiting_for_vet")
+          .order("created_at", { ascending: false });
+        
+        if (appointmentsError) {
+          console.error("Direct query also failed:", appointmentsError);
+          throw appointmentsError;
         }
-      }));
-
+        
+        console.log('Direct query successful:', appointmentsData);
+        jobsData = appointmentsData;
+      }
+      
+      // Transform the data
+      const jobsWithDetails = (jobsData || []).map(job => {
+        // Handle both view format and direct query format
+        if (job.pets && typeof job.pets === 'object' && !Array.isArray(job.pets)) {
+          // Direct query format - already has nested objects
+          return job;
+        } else {
+          // View format - needs transformation
+          return {
+            ...job,
+            pets: {
+              name: job.pet_name || "Unknown Pet",
+              type: job.pet_type || "Pet",
+              breed: job.pet_breed,
+              image: job.pet_image
+            },
+            pet_owner: {
+              first_name: job.owner_first_name || "Unknown",
+              last_name: job.owner_last_name || "Owner",
+              email: job.owner_email,
+              phone: job.owner_phone
+            }
+          };
+        }
+      });
+      
+      console.log('Transformed jobs:', jobsWithDetails);
       setJobs(jobsWithDetails);
       
       // Initialize proposed dates with the requested dates
@@ -123,11 +162,11 @@ export default function VetJobsPage() {
       setPreviousJobIds(currentJobIds);
       setNewJobCount(newCount);
       
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error in fetchAvailableJobs:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred",
+        description: err.message || "Failed to load jobs. Please refresh the page.",
         variant: "destructive",
       });
       setJobs([]);
@@ -139,6 +178,24 @@ export default function VetJobsPage() {
       }
     }
   };
+
+  // Add loading timeout effect
+  useEffect(() => {
+    // Set a timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      if (loading) {
+        console.error('Loading timeout - forcing completion');
+        setLoading(false);
+        toast({
+          title: "Loading Timeout",
+          description: "Failed to load jobs. Please refresh the page.",
+          variant: "destructive",
+        });
+      }
+    }, 10000); // 10 second timeout
+    
+    return () => clearTimeout(loadingTimeout);
+  }, [loading]);
 
   useEffect(() => {
     if (!user) return;
