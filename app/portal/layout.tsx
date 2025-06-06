@@ -38,11 +38,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           metadataRole,
           finalRole
         });
-        // Redirect based on role
+        // Only redirect if user is NOT a pet owner
         if (finalRole === 'admin') {
+          console.log('Admin user in portal, redirecting to admin');
           router.push('/admin');
+          return;
         } else if (finalRole === 'vet') {
+          console.log('Vet user in portal, redirecting to vet');
           router.push('/vet');
+          return;
         }
         // Pet owners should stay in portal
         const userData: UserData = {
@@ -79,15 +83,19 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             .then(({ data: dbUser }) => {
               finalRole = dbUser?.role || 'pet_owner';
               if (finalRole === 'admin') {
+                console.log('Admin user in portal (auth change), redirecting to admin');
                 router.push('/admin');
               } else if (finalRole === 'vet') {
+                console.log('Vet user in portal (auth change), redirecting to vet');
                 router.push('/vet');
               }
             });
         } else {
           if (finalRole === 'admin') {
+            console.log('Admin user in portal (auth change), redirecting to admin');
             router.push('/admin');
           } else if (finalRole === 'vet') {
+            console.log('Vet user in portal (auth change), redirecting to vet');
             router.push('/vet');
           }
         }

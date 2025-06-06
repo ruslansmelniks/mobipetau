@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Eye, EyeOff } from "lucide-react"
@@ -17,7 +17,35 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const supabase = useSupabaseClient()
+  const user = useUser()
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      console.log('User already logged in, redirecting...');
+      const userRole = user.user_metadata?.role || 'pet_owner';
+      if (userRole === 'admin') {
+        router.replace('/admin');
+      } else if (userRole === 'vet') {
+        router.replace('/vet');
+      } else {
+        router.replace('/portal/bookings');
+      }
+    }
+  }, [user, router]);
+
+  // Don't render the form if user is already logged in
+  if (user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +59,7 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       
-      logger.info('Attempting login', { email });
+      console.log('Starting login process...');
       
       // Sign in with Supabase
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
@@ -40,65 +68,44 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        logger.error('Login failed', { 
-          email,
-          error: signInError.message 
-        });
+        console.error('Login error:', signInError);
         setError(signInError.message || "Invalid email or password.");
         setIsLoading(false);
         return;
       }
 
-      if (!data.session) {
-        logger.error('No session returned after login');
+      if (!data.user) {
         setError("Login failed. Please try again.");
         setIsLoading(false);
         return;
       }
 
-      logger.info('Login successful', { 
-        userId: data.user?.id,
-        email: data.user?.email,
-        role: data.user?.user_metadata?.role || data.user?.app_metadata?.role
-      });
-
-      // Get the fresh session to ensure it's properly set
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !sessionData.session) {
-        logger.error('Failed to establish session after login', { 
-          sessionError: sessionError?.message 
-        });
-        setError("Login successful but failed to establish session. Please try again.");
-        setIsLoading(false);
-        return;
-      }
-
-      // Check user role from metadata
-      const userRole = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
-      let redirectPath = '/portal/bookings';
-      if (userRole === 'admin') {
-        redirectPath = '/admin';
-      } else if (userRole === 'vet') {
-        redirectPath = '/vet';
-      }
-
-      logger.info('Redirecting user after login', {
-        userId: data.user?.id,
-        role: userRole,
-        redirectPath
-      });
-
-      // Redirect directly to the appropriate page
-      router.push(redirectPath);
-      setIsLoading(false);
-      return;
+      console.log('Login successful, user:', data.user.email);
       
+      // Get the redirect URL from query params or default
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectTo = searchParams.get('redirectTo') || '/portal/bookings';
+      
+      // Check user role
+      const userRole = data.user.user_metadata?.role || 'pet_owner';
+      let finalRedirect = redirectTo;
+      
+      // Override redirect if role doesn't match
+      if (userRole === 'admin' && !redirectTo.startsWith('/admin')) {
+        finalRedirect = '/admin';
+      } else if (userRole === 'vet' && !redirectTo.startsWith('/vet')) {
+        finalRedirect = '/vet';
+      } else if (userRole === 'pet_owner' && !redirectTo.startsWith('/portal')) {
+        finalRedirect = '/portal/bookings';
+      }
+
+      console.log('Redirecting to:', finalRedirect);
+      
+      // Use window.location for a full page reload to ensure cookies are set
+      window.location.href = finalRedirect;
+      // Don't set loading to false - let the page redirect
     } catch (err: any) {
-      logger.error('Unexpected login error', {
-        email,
-        error: err.message
-      });
+      console.error('Unexpected error:', err);
       setError(err.message || "An unexpected error occurred during login. Please try again.");
       setIsLoading(false);
     }
