@@ -6,123 +6,88 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
-import { createPagesBrowserClient } from "@supabase/auth-helpers-nextjs"
-import { User } from "@supabase/supabase-js"
-import { UserData, UserProfile } from "@/types"
 import { NotificationBell } from "@/components/notification-bell"
+import { useSupabaseClient, useUser, useSession } from "@supabase/auth-helpers-react"
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserData | null>(null)
-  const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const [supabase] = useState(() => createPagesBrowserClient())
+  const supabase = useSupabaseClient()
+  const user = useUser()
+  const session = useSession()
+  const [isLoading, setIsLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && session.user) {
-        const currentUser = session.user as User;
-        // Check role from both metadata sources and database
-        const metadataRole = currentUser.user_metadata?.role || currentUser.app_metadata?.role;
-        let finalRole = metadataRole;
-        if (!finalRole) {
-          const { data: dbUser } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', currentUser.id)
-            .single();
-          finalRole = dbUser?.role || 'pet_owner';
-        }
-        console.log('Portal layout role check:', {
-          userId: currentUser.id,
-          metadataRole,
-          finalRole
-        });
-        // Only redirect if user is NOT a pet owner
-        if (finalRole === 'admin') {
-          console.log('Admin user in portal, redirecting to admin');
-          router.push('/admin');
-          return;
-        } else if (finalRole === 'vet') {
-          console.log('Vet user in portal, redirecting to vet');
-          router.push('/vet');
-          return;
-        }
-        // Pet owners should stay in portal
-        const userData: UserData = {
-          ...currentUser,
-          user_metadata: currentUser.user_metadata as UserProfile || {},
-        };
-        setUser(userData);
-        if (userData.user_metadata?.first_name) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: userData.user_metadata.first_name } } : null);
-        } else if (currentUser.email) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: currentUser.email!.split('@')[0] || 'User' } } : null );
-        }
-      } else {
-        router.push('/login');
+    // Mark as initialized after first render
+    setIsInitialized(true)
+  }, [])
+
+  useEffect(() => {
+    const checkUserRole = async () => {
+      // Don't check until initialized and we have session data
+      if (!isInitialized) return
+      
+      // If session is explicitly null (not undefined), user is not logged in
+      if (session === null) {
+        console.log('No session found, redirecting to login')
+        router.push('/login')
+        return
       }
-      setLoading(false);
-    };
-    getSession();
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
-        setUser(null);
-        router.push('/login');
-      } else if (session && session.user) {
-        const currentUser = session.user as User;
-        // Check role from both metadata sources and database
-        const metadataRole = currentUser.user_metadata?.role || currentUser.app_metadata?.role;
-        let finalRole = metadataRole;
-        if (!finalRole) {
-          supabase
-            .from('users')
-            .select('role')
-            .eq('id', currentUser.id)
-            .single()
-            .then(({ data: dbUser }) => {
-              finalRole = dbUser?.role || 'pet_owner';
-              if (finalRole === 'admin') {
-                console.log('Admin user in portal (auth change), redirecting to admin');
-                router.push('/admin');
-              } else if (finalRole === 'vet') {
-                console.log('Vet user in portal (auth change), redirecting to vet');
-                router.push('/vet');
-              }
-            });
-        } else {
-          if (finalRole === 'admin') {
-            console.log('Admin user in portal (auth change), redirecting to admin');
-            router.push('/admin');
-          } else if (finalRole === 'vet') {
-            console.log('Vet user in portal (auth change), redirecting to vet');
-            router.push('/vet');
+      
+      // If we have a session and user
+      if (session && user) {
+        try {
+          // Check role from metadata first
+          const metadataRole = user.user_metadata?.role || user.app_metadata?.role
+          
+          // If no role in metadata, check database
+          let finalRole = metadataRole
+          if (!finalRole) {
+            const { data: dbUser } = await supabase
+              .from('users')
+              .select('role')
+              .eq('id', user.id)
+              .single()
+            
+            finalRole = dbUser?.role || 'pet_owner'
           }
-        }
-        const userData: UserData = {
-          ...currentUser,
-          user_metadata: currentUser.user_metadata as UserProfile || {},
-        };
-        setUser(userData);
-        if (userData.user_metadata?.first_name) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: userData.user_metadata.first_name } } : null);
-        } else if (currentUser.email) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: currentUser.email!.split('@')[0] || 'User' } } : null );
+          
+          console.log('Portal layout role check:', {
+            userId: user.id,
+            metadataRole,
+            finalRole
+          })
+          
+          // Redirect based on role
+          if (finalRole === 'admin') {
+            console.log('Admin user in portal, redirecting to admin')
+            router.push('/admin')
+            return
+          } else if (finalRole === 'vet') {
+            console.log('Vet user in portal, redirecting to vet')
+            router.push('/vet')
+            return
+          }
+          
+          // Pet owners can stay - mark loading as complete
+          setIsLoading(false)
+        } catch (error) {
+          console.error('Error checking user role:', error)
+          setIsLoading(false)
         }
       }
-    });
-    return () => {
-      authListener?.subscription.unsubscribe();
-    };
-  }, [supabase, router]);
+    }
+    
+    checkUserRole()
+  }, [session, user, router, supabase, isInitialized])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // The onAuthStateChange listener should handle the redirect to /login
-    // router.push('/login'); // Usually not needed if listener is effective
-  };
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
-  if (loading) {
+  // Show loading while checking authentication
+  if (isLoading || !isInitialized || session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -130,18 +95,16 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
-    );
+    )
   }
-  
-  if (!user) {
-    // This case should ideally be handled by the redirect in useEffect, 
-    // but as a fallback or if loading finishes before redirect completes.
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-         <p className="text-gray-600">Redirecting to login...</p>
-      </div>
-    ); 
+
+  // User not logged in
+  if (!session || !user) {
+    return null // Let the redirect happen
   }
+
+  // Get display name
+  const displayName = user.user_metadata?.first_name || user.email?.split('@')[0] || 'User'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -154,7 +117,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <div className="flex items-center gap-4">
               <div className="text-sm mr-2">
                 <span className="text-gray-500">Welcome,</span>{" "}
-                <span className="font-medium">{user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'User'}</span>
+                <span className="font-medium">{displayName}</span>
               </div>
               <NotificationBell />
               <Button variant="outline" size="sm" className="font-medium" onClick={handleLogout}>
@@ -173,5 +136,5 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
       <main className="container mx-auto max-w-[1400px] px-4 py-8">{children}</main>
     </div>
-  );
+  )
 }

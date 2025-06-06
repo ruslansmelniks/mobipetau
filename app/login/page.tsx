@@ -22,9 +22,11 @@ export default function LoginPage() {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (user) {
-      console.log('User already logged in, redirecting...');
+    // Only redirect if we have a confirmed user session
+    if (user && user.id) {
+      console.log('User already logged in, redirecting...', user.id);
       const userRole = user.user_metadata?.role || 'pet_owner';
+      // Use replace to prevent back button issues
       if (userRole === 'admin') {
         router.replace('/admin');
       } else if (userRole === 'vet') {
