@@ -10,25 +10,42 @@ export type AppointmentStatus =
   | 'cancelled'         // Appointment was cancelled
   | 'declined';         // Vet declined the appointment
 
-export const getStatusLabel = (status: AppointmentStatus | string) => {
+interface StatusInfo {
+  label: string
+  color: string
+}
+
+export function getStatusLabel(status: string): StatusInfo {
   switch (status) {
-    case "pending":
-      return { label: "Draft", color: "bg-gray-100 text-gray-600" };
-    case "waiting_for_vet":
-      return { label: "Waiting for vet", color: "bg-yellow-100 text-yellow-800" };
-    case "confirmed":
-      return { label: "Confirmed", color: "bg-green-100 text-green-800" };
-    case "time_proposed":
-      return { label: "Time proposed", color: "bg-blue-100 text-blue-800" };
-    case "in_progress":
-      return { label: "In progress", color: "bg-purple-100 text-purple-800" };
-    case "completed":
-      return { label: "Completed", color: "bg-gray-100 text-gray-800" };
-    case "cancelled":
-      return { label: "Cancelled", color: "bg-red-100 text-red-800" };
-    case "declined":
-      return { label: "Declined", color: "bg-red-100 text-red-800" };
+    case 'confirmed':
+      return {
+        label: 'Confirmed',
+        color: 'bg-green-100 text-green-800'
+      }
+    case 'pending':
+      return {
+        label: 'Pending',
+        color: 'bg-yellow-100 text-yellow-800'
+      }
+    case 'completed':
+      return {
+        label: 'Completed',
+        color: 'bg-blue-100 text-blue-800'
+      }
+    case 'cancelled':
+      return {
+        label: 'Cancelled',
+        color: 'bg-red-100 text-red-800'
+      }
+    case 'proposed':
+      return {
+        label: 'Time Proposed',
+        color: 'bg-orange-100 text-orange-800'
+      }
     default:
-      return { label: status || "Unknown", color: "bg-gray-100 text-gray-800" };
+      return {
+        label: status.charAt(0).toUpperCase() + status.slice(1),
+        color: 'bg-gray-100 text-gray-800'
+      }
   }
-}; 
+} 

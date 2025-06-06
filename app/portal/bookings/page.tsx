@@ -1,9 +1,23 @@
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient } from '@supabase/ssr'
 import BookingsContent from './BookingsContent'
 
 export default async function BookingsPage() {
-  const supabase = await createClient()
+  // Properly await cookies
+  const cookieStore = await cookies()
+  
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
   
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
