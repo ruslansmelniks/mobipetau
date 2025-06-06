@@ -1,6 +1,6 @@
 "use client"
 
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '../hooks/useAuth'
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
