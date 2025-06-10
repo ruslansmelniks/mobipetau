@@ -149,6 +149,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to update appointment status' }, { status: 500 });
     }
 
+    // Create notification for pet owner
+    const notificationData = {
+      user_id: appointment.pet_owner_id,
+      type: action === 'accept' ? 'appointment_accepted' : 
+            action === 'decline' ? 'appointment_declined' : 
+            'time_proposed',
+      title: action === 'accept' ? 'Appointment Accepted' :
+             action === 'decline' ? 'Appointment Declined' :
+             'New Time Proposed',
+      message: action === 'accept' 
+        ? `Dr. ${vetName} has accepted your appointment for ${petName} on ${appointmentDate} at ${appointmentTime}`
+        : action === 'decline'
+        ? `Dr. ${vetName} has declined your appointment for ${petName}. Reason: ${message || 'Not specified'}`
+        : `Dr. ${vetName} has proposed a new time for ${petName}'s appointment: ${proposedDate} at ${proposedTime}`,
+      appointment_id: appointmentId,
+      is_read: false,
+      created_at: new Date().toISOString()
+    };
+
+    const { error: notifError } = await supabaseAdmin
+      .from('notifications')
+      .insert(notificationData);
+
+    if (notifError) {
+      logger.error('Failed to create notification', { error: notifError });
+      // Don't fail the whole operation if notification fails
+    }
+
     logger.info('Appointment status updated', { 
       appointmentId, 
       action, 
