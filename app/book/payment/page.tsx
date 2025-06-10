@@ -147,13 +147,19 @@ export default function PaymentPage() {
         const selectedServices = services_data;
         const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
 
-        // Create or update appointment
-        const { data: appointment, error: appointmentError } = await supabase
-          .from('appointments')
-          .insert({
+        // Create appointment via API route
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const response = await fetch('/api/appointments/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
+          body: JSON.stringify({
             pet_owner_id: user.id,
             pet_id: pet_id,
-            services: selectedServices, // Use the full service objects
+            services: selectedServices,
             status: 'pending',
             date: date,
             time_slot: time_slot,
@@ -166,16 +172,14 @@ export default function PaymentPage() {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
-          .select()
-          .single();
-
-        if (appointmentError) {
-          console.error('Error creating appointment:', appointmentError);
-          setError('Failed to create appointment. Please try again.');
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setError(result.error || 'Failed to create appointment. Please try again.');
           setLoading(false);
           return;
         }
-
+        const appointment = result.appointment;
         setAppointmentId(appointment.id);
 
         // Get pet details

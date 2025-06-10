@@ -4,6 +4,7 @@ import SupabaseProvider from './SupabaseProvider'
 import { SmartLogo } from "@/components/smart-logo"
 import { NotificationBell } from "@/components/notification-bell"
 import { Providers } from '@/components/providers'
+import { GoogleMapsProvider } from './components/GoogleMapsProvider'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -20,9 +21,11 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <SupabaseProvider>
-          <Providers>
-            {children}
-          </Providers>
+          <GoogleMapsProvider>
+            <Providers>
+              {children}
+            </Providers>
+          </GoogleMapsProvider>
         </SupabaseProvider>
       </body>
     </html>

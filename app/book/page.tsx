@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft, Plus, Dog, Cat, PawPrint } from "lucide-react"
@@ -36,50 +36,48 @@ export default function BookAppointment() {
   const supabase = useSupabaseClient();
   const [isCancelling, setIsCancelling] = useState(false);
   const debug = true;
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isLoadingPets, setIsLoadingPets] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchPets = async () => {
-      console.log('Starting to fetch pets for user:', authUser?.id);
-      setPets([]);
-      setSelectedPet(null);
-      setError(null);
-      
-      if (!authUser) {
-        console.log('No authenticated user found');
+      if (!authUser?.id) {
+        setIsLoadingPets(false);
         return;
       }
-
+      console.log('Starting to fetch pets for user:', authUser.id);
+      setIsLoadingPets(true);
+      setError(null);
       try {
-        console.log('Querying pets table for owner_id:', authUser.id);
         const { data: petData, error: petError } = await supabase
           .from('pets')
           .select('*')
           .eq('owner_id', authUser.id);
-
         console.log('Pets query response:', { petData, petError });
-
+        if (!isMounted) return;
         if (petError) {
           console.error('Error fetching pets:', petError);
           setError('Failed to load your pets. Please try refreshing the page.');
-          return;
+        } else {
+          setPets(petData || []);
+          console.log('Successfully set pets:', petData);
         }
-
-        if (!petData || petData.length === 0) {
-          console.log('No pets found for user');
-          setPets([]);
-          return;
-        }
-
-        console.log('Successfully fetched pets:', petData);
-        setPets(petData);
       } catch (err) {
+        if (!isMounted) return;
         console.error('Unexpected error fetching pets:', err);
         setError('An unexpected error occurred. Please try again.');
+      } finally {
+        if (isMounted) {
+          setIsLoadingPets(false);
+        }
       }
     };
-
     fetchPets();
-  }, [authUser, supabase]);
+    return () => {
+      isMounted = false;
+    };
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (selectedPet) {
@@ -87,10 +85,12 @@ export default function BookAppointment() {
     }
   }, [selectedPet]);
 
-  const handlePetSelect = async (petId: string) => {
+  const handlePetSelect = (petId: string) => {
     console.log('Pet selected:', petId);
-    setSelectedPet(petId);
-    setError(null);
+    if (selectedPet !== petId) {
+      setSelectedPet(petId);
+      setError(null);
+    }
   };
 
   const handleNext = async () => {
@@ -131,10 +131,131 @@ export default function BookAppointment() {
     router.replace('/portal/bookings');
   };
 
+  const petCards = useMemo(() => {
+    return pets.map((pet) => {
+      // Calculate age display
+      const getAgeDisplay = (pet: any) => {
+        if (pet.age && pet.age_unit) {
+          const unit = pet.age_unit === 'years' ? 'yr' : pet.age_unit === 'months' ? 'mo' : pet.age_unit;
+          return `${pet.age} ${unit}${pet.age > 1 ? 's' : ''}`;
+        } else if (pet.date_of_birth) {
+          return calculateAge(pet.date_of_birth);
+        }
+        return null;
+      };
+
+      // Get gender display
+      const getGenderDisplay = (gender: string) => {
+        const genderMap: Record<string, { icon: string; label: string; color: string }> = {
+          'male': { icon: '♂', label: 'Male', color: 'text-blue-500' },
+          'female': { icon: '♀', label: 'Female', color: 'text-pink-500' },
+          'unknown': { icon: '?', label: 'Unknown', color: 'text-gray-400' }
+        };
+        return genderMap[gender?.toLowerCase()] || genderMap['unknown'];
+      };
+
+      const ageDisplay = getAgeDisplay(pet);
+      const genderInfo = getGenderDisplay(pet.gender);
+
+      return (
+        <div
+          key={pet.id}
+          className={`border rounded-xl p-5 flex flex-row items-center bg-white transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-teal-300 group relative ${
+            selectedPet === pet.id ? "border-teal-500 ring-2 ring-teal-400 shadow-lg" : ""
+          }`}
+          onClick={() => handlePetSelect(pet.id)}
+        >
+          <div className="flex-shrink-0 flex items-center justify-center mr-4">
+            <RadioGroupItem
+              value={pet.id}
+              id={`pet-${pet.id}`}
+              onClick={e => e.stopPropagation()}
+              checked={selectedPet === pet.id}
+            />
+          </div>
+
+          {/* Pet Image */}
+          <div className="w-20 h-20 overflow-hidden rounded-lg bg-gray-100 border border-gray-200 mr-4 flex-shrink-0">
+            {pet.image ? (
+              <Image
+                src={pet.image}
+                alt={pet.name}
+                width={80}
+                height={80}
+                className="object-cover w-full h-full"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                {pet.type?.toLowerCase() === 'dog' ? (
+                  <Dog className="h-8 w-8 text-gray-400" />
+                ) : pet.type?.toLowerCase() === 'cat' ? (
+                  <Cat className="h-8 w-8 text-gray-400" />
+                ) : (
+                  <PawPrint className="h-8 w-8 text-gray-400" />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Pet Information */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between mb-1">
+              <h3 className="font-semibold text-lg text-gray-900">{pet.name}</h3>
+            </div>
+
+            {/* Species and Breed */}
+            <p className="text-sm text-gray-600 mb-2">
+              {pet.type || 'Pet'}
+              {pet.breed && ` • ${pet.breed}`}
+            </p>
+
+            {/* Additional Info Row */}
+            <div className="flex items-center gap-4 text-sm">
+              {/* Gender */}
+              {pet.gender && (
+                <div className="flex items-center gap-1">
+                  <span className={`text-lg ${genderInfo.color}`} title={genderInfo.label}>
+                    {genderInfo.icon}
+                  </span>
+                  <span className="text-gray-600">{genderInfo.label}</span>
+                </div>
+              )}
+
+              {/* Age */}
+              {ageDisplay && (
+                <div className="flex items-center gap-1 text-gray-600">
+                  <span>{ageDisplay} old</span>
+                </div>
+              )}
+
+              {/* Weight */}
+              {pet.weight && (
+                <div className="flex items-center gap-1 text-gray-600">
+                  <span>{pet.weight} lbs</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    });
+  }, [pets, selectedPet]);
+
   if (!authUser) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p>Please log in to continue booking</p>
+      </div>
+    );
+  }
+
+  if (isLoadingPets) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p>Loading your pets...</p>
+        </div>
       </div>
     );
   }
@@ -150,6 +271,7 @@ export default function BookAppointment() {
           variant="default"
           onClick={() => {
             setError(null);
+            window.location.reload();
           }}
         >
           Retry
@@ -181,117 +303,12 @@ export default function BookAppointment() {
 
           {pets.length > 0 ? (
             <RadioGroup
+              key="pet-selection-group"
               value={selectedPet || ""}
               onValueChange={handlePetSelect}
               className="space-y-4 mb-8"
             >
-              {pets.map((pet) => {
-                // Calculate age display
-                const getAgeDisplay = (pet: any) => {
-                  if (pet.age && pet.age_unit) {
-                    const unit = pet.age_unit === 'years' ? 'yr' : pet.age_unit === 'months' ? 'mo' : pet.age_unit;
-                    return `${pet.age} ${unit}${pet.age > 1 ? 's' : ''}`;
-                  } else if (pet.date_of_birth) {
-                    return calculateAge(pet.date_of_birth);
-                  }
-                  return null;
-                };
-
-                // Get gender display
-                const getGenderDisplay = (gender: string) => {
-                  const genderMap: Record<string, { icon: string; label: string; color: string }> = {
-                    'male': { icon: '♂', label: 'Male', color: 'text-blue-500' },
-                    'female': { icon: '♀', label: 'Female', color: 'text-pink-500' },
-                    'unknown': { icon: '?', label: 'Unknown', color: 'text-gray-400' }
-                  };
-                  return genderMap[gender?.toLowerCase()] || genderMap['unknown'];
-                };
-
-                const ageDisplay = getAgeDisplay(pet);
-                const genderInfo = getGenderDisplay(pet.gender);
-
-                return (
-                  <div
-                    key={pet.id}
-                    className={`border rounded-xl p-5 flex flex-row items-center bg-white transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-teal-300 group relative ${
-                      selectedPet === pet.id ? "border-teal-500 ring-2 ring-teal-400 shadow-lg" : ""
-                    }`}
-                    onClick={() => handlePetSelect(pet.id)}
-                  >
-                    <div className="flex-shrink-0 flex items-center justify-center mr-4">
-                      <RadioGroupItem
-                        value={pet.id}
-                        id={`pet-${pet.id}`}
-                        onClick={e => e.stopPropagation()}
-                        checked={selectedPet === pet.id}
-                      />
-                    </div>
-
-                    {/* Pet Image */}
-                    <div className="w-20 h-20 overflow-hidden rounded-lg bg-gray-100 border border-gray-200 mr-4 flex-shrink-0">
-                      {pet.image ? (
-                        <Image
-                          src={pet.image}
-                          alt={pet.name}
-                          width={80}
-                          height={80}
-                          className="object-cover w-full h-full"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          {pet.type?.toLowerCase() === 'dog' ? (
-                            <Dog className="h-8 w-8 text-gray-400" />
-                          ) : pet.type?.toLowerCase() === 'cat' ? (
-                            <Cat className="h-8 w-8 text-gray-400" />
-                          ) : (
-                            <PawPrint className="h-8 w-8 text-gray-400" />
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Pet Information */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-1">
-                        <h3 className="font-semibold text-lg text-gray-900">{pet.name}</h3>
-                      </div>
-
-                      {/* Species and Breed */}
-                      <p className="text-sm text-gray-600 mb-2">
-                        {pet.type || 'Pet'}
-                        {pet.breed && ` • ${pet.breed}`}
-                      </p>
-
-                      {/* Additional Info Row */}
-                      <div className="flex items-center gap-4 text-sm">
-                        {/* Gender */}
-                        {pet.gender && (
-                          <div className="flex items-center gap-1">
-                            <span className={`text-lg ${genderInfo.color}`} title={genderInfo.label}>
-                              {genderInfo.icon}
-                            </span>
-                            <span className="text-gray-600">{genderInfo.label}</span>
-                          </div>
-                        )}
-
-                        {/* Age */}
-                        {ageDisplay && (
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <span>{ageDisplay} old</span>
-                          </div>
-                        )}
-
-                        {/* Weight */}
-                        {pet.weight && (
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <span>{pet.weight} lbs</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {petCards}
             </RadioGroup>
           ) : (
             <div className="text-center text-gray-500 mb-8">You have no pets yet. Please add a new pet to continue.</div>

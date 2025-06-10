@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, Suspense } from 'react';
-import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import { GoogleMap, Marker, Autocomplete } from '@react-google-maps/api';
 import { Loader } from '@/components/ui/loader';
 
 const perthCenter = { lat: -31.9505, lng: 115.8605 };
@@ -64,11 +64,6 @@ export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
-    libraries: ['places'],
-  });
-
   const onLoad = useCallback((autocomplete: google.maps.places.Autocomplete) => {
     autocompleteRef.current = autocomplete;
   }, []);
@@ -121,18 +116,6 @@ export const GoogleMapsAutocomplete: React.FC<GoogleMapsAutocompleteProps> = ({ 
       setReverseGeocodeError('Reverse geocoding failed.');
     }
   }, [onChange, onPlaceSelected]);
-
-  if (loadError) {
-    return (
-      <div className="p-4 border border-red-200 bg-red-50 rounded-md">
-        <p className="text-red-600">Failed to load Google Maps. Please try refreshing the page.</p>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return <GoogleMapsLoading />;
-  }
 
   return (
     <GoogleMapsErrorBoundary>
