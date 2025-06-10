@@ -39,20 +39,45 @@ export default function BookAppointment() {
 
   useEffect(() => {
     const fetchPets = async () => {
+      console.log('Starting to fetch pets for user:', authUser?.id);
       setPets([]);
       setSelectedPet(null);
       setError(null);
-      if (!authUser) return;
-      const { data: petData, error: petError } = await supabase
-        .from('pets')
-        .select('*')
-        .eq('owner_id', authUser.id);
-      if (petError) {
-        setError('Failed to load your pets. Please try refreshing the page.');
-      } else {
-        setPets(petData || []);
+      
+      if (!authUser) {
+        console.log('No authenticated user found');
+        return;
+      }
+
+      try {
+        console.log('Querying pets table for owner_id:', authUser.id);
+        const { data: petData, error: petError } = await supabase
+          .from('pets')
+          .select('*')
+          .eq('owner_id', authUser.id);
+
+        console.log('Pets query response:', { petData, petError });
+
+        if (petError) {
+          console.error('Error fetching pets:', petError);
+          setError('Failed to load your pets. Please try refreshing the page.');
+          return;
+        }
+
+        if (!petData || petData.length === 0) {
+          console.log('No pets found for user');
+          setPets([]);
+          return;
+        }
+
+        console.log('Successfully fetched pets:', petData);
+        setPets(petData);
+      } catch (err) {
+        console.error('Unexpected error fetching pets:', err);
+        setError('An unexpected error occurred. Please try again.');
       }
     };
+
     fetchPets();
   }, [authUser, supabase]);
 
@@ -63,6 +88,7 @@ export default function BookAppointment() {
   }, [selectedPet]);
 
   const handlePetSelect = async (petId: string) => {
+    console.log('Pet selected:', petId);
     setSelectedPet(petId);
     setError(null);
   };
@@ -72,11 +98,15 @@ export default function BookAppointment() {
       setError("Please select a pet before proceeding.");
       return;
     }
+
+    console.log('Proceeding to services with pet:', selectedPet);
     setError(null);
+    
     try {
       sessionStorage.setItem('booking_pet_id', selectedPet);
       router.push("/book/services");
     } catch (err: any) {
+      console.error('Error saving pet selection:', err);
       setError('Error updating pet selection. Please try again.');
     }
   };

@@ -48,7 +48,7 @@ type Service = {
   // other service fields
 };
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 const ErrorDisplay = ({ error, onRetry }: { error: string, onRetry: () => void }) => {
   const router = useRouter();
@@ -95,6 +95,28 @@ export default function PaymentPage() {
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Add session storage validation
+    const validateBookingData = () => {
+      const required = [
+        'booking_pet_id',
+        'booking_service_ids',
+        'booking_date',
+        'booking_time_slot',
+        'booking_address'
+      ];
+      const missing = required.filter(key => !sessionStorage.getItem(key));
+      if (missing.length > 0) {
+        console.error('Missing required booking data:', missing);
+        setError(`Missing required information: ${missing.join(', ')}. Please complete all booking steps.`);
+        setLoading(false);
+        return false;
+      }
+      return true;
+    };
+    if (!validateBookingData()) {
+      return;
+    }
+
     const createAppointmentAndLoadSummary = async () => {
       if (!user) {
         setLoading(false);
@@ -105,6 +127,7 @@ export default function PaymentPage() {
         // Load all booking data from sessionStorage
         const pet_id = sessionStorage.getItem('booking_pet_id');
         const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
+        const services_data = JSON.parse(sessionStorage.getItem('booking_services') || '[]');
         const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
         const address = sessionStorage.getItem('booking_address') || '';
         const date = sessionStorage.getItem('booking_date') || '';
@@ -120,16 +143,8 @@ export default function PaymentPage() {
           return;
         }
 
-        // Service pricing map
-        const serviceMap: Record<string, { id: string; name: string; price: number }> = {
-          '1': { id: '1', name: 'After hours home visit', price: 299 },
-          '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
-        };
-
-        // Calculate selected services and total
-        const selectedServices = service_ids.map((id: string) => 
-          serviceMap[id] || { id, name: `Service ${id}`, price: 0 }
-        );
+        // Use the full service objects from sessionStorage
+        const selectedServices = services_data;
         const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
 
         // Create or update appointment
@@ -138,7 +153,7 @@ export default function PaymentPage() {
           .insert({
             pet_owner_id: user.id,
             pet_id: pet_id,
-            services: selectedServices,
+            services: selectedServices, // Use the full service objects
             status: 'pending',
             date: date,
             time_slot: time_slot,
@@ -194,6 +209,18 @@ export default function PaymentPage() {
 
     createAppointmentAndLoadSummary();
   }, [user, supabase]);
+
+  useEffect(() => {
+    // Load Stripe.js when component mounts
+    const loadStripeScript = async () => {
+      const stripe = await stripePromise
+      if (!stripe) {
+        console.error('Failed to load Stripe')
+        setError('Payment system initialization failed')
+      }
+    }
+    loadStripeScript()
+  }, [])
 
   const handlePayment = async () => {
     if (!bookingSummary || !appointmentId) return;

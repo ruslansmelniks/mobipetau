@@ -31,26 +31,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
 
-// Helper function to calculate age from date of birth
-const calculateAge = (dateOfBirth: string): string => {
-  if (!dateOfBirth) return ""
-
-  const birthDate = new Date(dateOfBirth)
-  const today = new Date()
-
-  let years = today.getFullYear() - birthDate.getFullYear()
-  const monthDiff = today.getMonth() - birthDate.getMonth()
-
+// Helper function to calculate age and age unit from date of birth
+function calculateAgeAndUnit(dateOfBirth: string): { age: number | null, age_unit: 'years' | 'months' } {
+  if (!dateOfBirth) return { age: null, age_unit: 'years' };
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let years = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    years--
+    years--;
   }
-
   if (years < 1) {
-    const months = years * 12 + monthDiff
-    return `${months} months`
+    const months = (today.getFullYear() - birthDate.getFullYear()) * 12 + (today.getMonth() - birthDate.getMonth());
+    return { age: Math.max(0, months), age_unit: 'months' };
   }
-
-  return `${years} years`
+  return { age: years, age_unit: 'years' };
 }
 
 // Form steps for the wizard
@@ -101,9 +96,13 @@ export default function PetsPage() {
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData({ ...formData, [name]: value })
-  }
+    const { name, value } = e.target;
+    // Map camelCase to snake_case for DB fields
+    let fieldName = name;
+    if (name === 'dateOfBirth') fieldName = 'date_of_birth';
+    if (name === 'additionalComments') fieldName = 'additional_comments';
+    setFormData({ ...formData, [fieldName]: value });
+  };
 
   const handleRadioChange = (name: string, value: string) => {
     setFormData({ ...formData, [name]: value })
@@ -113,60 +112,104 @@ export default function PetsPage() {
     setFormData({ ...formData, [name]: value })
   }
 
-  const handleAddPet = () => {
+  const handleAddPet = async () => {
+    if (!user) {
+      console.error('No user found when trying to add pet');
+      return;
+    }
+
+    console.log('Adding new pet with data:', formData);
+
+    const { age, age_unit } = calculateAgeAndUnit(formData.date_of_birth || "");
+
     const newPet = {
-      id: `new-${Date.now()}`,
       name: formData.name || "",
       type: formData.type || "",
       breed: formData.breed || "",
-      dateOfBirth: formData.dateOfBirth || "",
-      age: calculateAge(formData.dateOfBirth || ""),
-      weight: formData.weight || "",
+      date_of_birth: formData.date_of_birth || null,
+      age: age,
+      age_unit: age_unit,
+      weight: formData.weight ? parseFloat(formData.weight) : null,
       gender: formData.gender || "Male",
       desexed: formData.desexed || "No",
       microchip: formData.microchip || "",
       image: petImage || "/placeholder.svg?key=pet",
       temperament: formData.temperament || "",
       reactive: formData.reactive || "No",
-      additionalComments: formData.additionalComments || "",
-      medicalHistory: formData.additionalComments || "", // For backward compatibility
+      additional_comments: formData.additional_comments || "",
+      owner_id: user.id
+    };
+
+    console.log('Saving pet to database:', newPet);
+
+    const { data, error } = await supabase
+      .from('pets')
+      .insert([newPet])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving pet:', error);
+      // You might want to show an error message to the user here
+      return;
     }
 
-    setPets([...pets, newPet])
-    setIsAddDialogOpen(false)
-    setPetImage(null)
-    setCurrentStep(0)
-    setFormData({})
-  }
+    console.log('Pet saved successfully:', data);
 
-  const handleEditPet = () => {
-    if (!petToEdit) return
+    // Update local state with the saved pet data
+    setPets([...pets, data]);
+    setIsAddDialogOpen(false);
+    setPetImage(null);
+    setCurrentStep(0);
+    setFormData({});
+  };
+
+  const handleEditPet = async () => {
+    if (!petToEdit) return;
+
+    const { age, age_unit } = calculateAgeAndUnit(formData.date_of_birth || petToEdit.date_of_birth || "");
 
     const updatedPet = {
       ...petToEdit,
       name: formData.name || petToEdit.name,
       type: formData.type || petToEdit.type,
       breed: formData.breed || petToEdit.breed,
-      dateOfBirth: formData.dateOfBirth || petToEdit.dateOfBirth,
-      age: calculateAge(formData.dateOfBirth || petToEdit.dateOfBirth),
-      weight: formData.weight || petToEdit.weight,
+      date_of_birth: formData.date_of_birth || petToEdit.date_of_birth,
+      age: age,
+      age_unit: age_unit,
+      weight: formData.weight ? parseFloat(formData.weight) : petToEdit.weight,
       gender: formData.gender || petToEdit.gender,
       desexed: formData.desexed || petToEdit.desexed,
       microchip: formData.microchip || petToEdit.microchip,
       image: petImage || petToEdit.image,
       temperament: formData.temperament || petToEdit.temperament,
       reactive: formData.reactive || petToEdit.reactive,
-      additionalComments: formData.additionalComments || petToEdit.additionalComments,
-      medicalHistory: formData.additionalComments || petToEdit.additionalComments, // For backward compatibility
+      additional_comments: formData.additional_comments || petToEdit.additional_comments
+    };
+
+    console.log('Updating pet:', updatedPet);
+
+    const { data, error } = await supabase
+      .from('pets')
+      .update(updatedPet)
+      .eq('id', petToEdit.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating pet:', error);
+      return;
     }
 
-    setPets(pets.map((pet) => (pet.id === petToEdit.id ? updatedPet : pet)))
-    setIsEditDialogOpen(false)
-    setPetToEdit(null)
-    setPetImage(null)
-    setCurrentStep(0)
-    setFormData({})
-  }
+    console.log('Pet updated successfully:', data);
+
+    setPets(pets.map((pet) => (pet.id === petToEdit.id ? data : pet)));
+    setIsEditDialogOpen(false);
+    setPetToEdit(null);
+    setPetImage(null);
+    setCurrentStep(0);
+    setFormData({});
+  };
 
   const handleDeletePet = () => {
     if (!petToDelete) return
@@ -182,14 +225,14 @@ export default function PetsPage() {
       name: pet.name,
       type: pet.type,
       breed: pet.breed,
-      dateOfBirth: pet.dateOfBirth,
+      date_of_birth: pet.date_of_birth,
       weight: pet.weight,
       gender: pet.gender,
       desexed: pet.desexed,
       microchip: pet.microchip,
       temperament: pet.temperament,
       reactive: pet.reactive,
-      additionalComments: pet.additionalComments,
+      additional_comments: pet.additional_comments,
     })
     setIsEditDialogOpen(true)
   }
@@ -314,12 +357,12 @@ export default function PetsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="dateOfBirth">Date of birth</Label>
+            <Label htmlFor="date_of_birth">Date of birth</Label>
             <Input
-              id="dateOfBirth"
-              name="dateOfBirth"
+              id="date_of_birth"
+              name="date_of_birth"
               type="date"
-              value={formData.dateOfBirth || ""}
+              value={formData.date_of_birth || ""}
               onChange={handleInputChange}
               placeholder="DD/MM/YYYY"
             />
@@ -480,11 +523,11 @@ export default function PetsPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="additionalComments">Additional comments</Label>
+          <Label htmlFor="additional_comments">Additional comments</Label>
           <Textarea
-            id="additionalComments"
-            name="additionalComments"
-            value={formData.additionalComments || ""}
+            id="additional_comments"
+            name="additional_comments"
+            value={formData.additional_comments || ""}
             onChange={handleInputChange}
             placeholder="Please add any useful information"
             className="min-h-[100px]"
@@ -618,7 +661,7 @@ export default function PetsPage() {
               <CardContent className="p-6">
                 <h2 className="text-xl font-semibold mb-1">{pet.name}</h2>
                 <p className="text-gray-500 mb-4">
-                  {pet.breed} • {pet.age}
+                  {pet.breed} • {pet.age !== null && pet.age !== undefined ? (pet.age_unit === 'months' ? `${pet.age} month${pet.age !== 1 ? 's' : ''}` : `${pet.age} year${pet.age !== 1 ? 's' : ''}`) : 'Unknown age'}
                 </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">

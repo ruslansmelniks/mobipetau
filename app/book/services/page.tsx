@@ -76,6 +76,10 @@ export default function SelectServices() {
     setAllServices(services);
     // Load selected pet from sessionStorage (optional, for validation)
     const petId = sessionStorage.getItem('booking_pet_id');
+    if (!petId) {
+      router.replace('/book');
+      return;
+    }
     // Optionally, redirect if not found
   }, [user]);
 
@@ -91,8 +95,20 @@ export default function SelectServices() {
     setError(null);
     try {
       setIsSaving(true);
+      
+      // Store the selected services with their full details
+      const selectedServicesData = allServices
+        .filter(service => selectedServiceIds.includes(service.id))
+        .map(service => ({
+          id: service.id,
+          name: service.name,
+          price: service.price
+        }));
+      
       sessionStorage.setItem('booking_service_ids', JSON.stringify(selectedServiceIds));
+      sessionStorage.setItem('booking_services', JSON.stringify(selectedServicesData));
       sessionStorage.setItem('booking_issue_description', issueDescription);
+      
       router.push("/book/appointment");
     } catch (err: any) {
       setError('Error updating services. Please try again.');

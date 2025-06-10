@@ -165,6 +165,10 @@ export default function AppointmentDetails() {
     setLoading(false)
     // Load previous step data from sessionStorage
     const petId = sessionStorage.getItem('booking_pet_id');
+    if (!petId) {
+      router.replace('/book');
+      return;
+    }
     const serviceIds = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
     const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
     // Optionally, set these to state or validate
@@ -311,6 +315,24 @@ export default function AppointmentDetails() {
                     onValueChange={(value: 'morning' | 'afternoon' | 'evening') => {
                       setTimeOfDay(value);
                       setSelectedTimeSlot(null);
+                      console.log('Time of day changed to:', value);
+                      console.log('Available slots for this period:', timeSlots.filter(slot => {
+                        const [startTime] = slot.split(' - ');
+                        const [hourStr] = startTime.split(':');
+                        let hour = parseInt(hourStr);
+                        const isPM = slot.includes('PM');
+                        const isAM = slot.includes('AM');
+                        if (isPM && hour !== 12) hour += 12;
+                        else if (isAM && hour === 12) hour = 0;
+                        const isMorning = hour >= 6 && hour < 10;
+                        const isAfternoon = hour >= 10 && hour < 16;
+                        const isEvening = hour >= 16 && hour <= 20;
+                        return (
+                          (value === 'morning' && isMorning) ||
+                          (value === 'afternoon' && isAfternoon) ||
+                          (value === 'evening' && isEvening)
+                        );
+                      }));
                     }}
                   >
                     <SelectTrigger>
@@ -332,18 +354,20 @@ export default function AppointmentDetails() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {timeSlots.map((slot) => {
                       const [startTime] = slot.split(' - ');
-                      const hour = parseInt(startTime.split(':')[0]);
-                      const isMorning = hour < 10;
-                      const isAfternoon = hour >= 10 && hour < 17;
-                      const isEvening = hour >= 17;
-
+                      const [hourStr] = startTime.split(':');
+                      let hour = parseInt(hourStr);
+                      const isPM = slot.includes('PM');
+                      const isAM = slot.includes('AM');
+                      if (isPM && hour !== 12) hour += 12;
+                      else if (isAM && hour === 12) hour = 0;
+                      const isMorning = hour >= 6 && hour < 10;
+                      const isAfternoon = hour >= 10 && hour < 16;
+                      const isEvening = hour >= 16 && hour <= 20;
                       const showSlot =
                         (timeOfDay === 'morning' && isMorning) ||
                         (timeOfDay === 'afternoon' && isAfternoon) ||
                         (timeOfDay === 'evening' && isEvening);
-
                       if (!showSlot) return null;
-
                       return (
                         <Button
                           key={slot}
@@ -373,7 +397,7 @@ export default function AppointmentDetails() {
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!date || !selectedTimeSlot || !address}
+              disabled={!date || !selectedTimeSlot || !address || showPerthWarning}
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
               {loading ? "Saving..." : "Review details"}

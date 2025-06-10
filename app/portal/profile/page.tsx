@@ -6,57 +6,61 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { useSupabaseClient, useUser } from '@supabase/auth-helpers-react'
 import { useRouter } from "next/navigation"
 import { ProfileFormData, UserProfile } from "@/types"
 
 export default function ProfilePage() {
+  const supabase = useSupabaseClient()
+  const user = useUser()
   const [formData, setFormData] = useState<ProfileFormData | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [supabase] = useState(() => createPagesBrowserClient())
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     const fetchUserProfile = async () => {
-      setLoading(true)
-      setMessage(null)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-      if (userError) {
-        console.error("Error fetching user:", userError)
-        setMessage({ type: 'error', text: 'Could not fetch user profile. Please try again.' })
+      console.log("ProfilePage: Starting to fetch user profile");
+      try {
+        setLoading(true)
+        setMessage(null)
+        // Get the current session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log("ProfilePage: Session check:", { hasSession: !!session, error: sessionError });
+        // Get the current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        console.log("ProfilePage: User check:", { hasUser: !!user, error: userError });
+        if (userError || !user) {
+          console.error("Error fetching user:", userError)
+          setMessage({ type: 'error', text: 'Could not fetch user profile. Please try again.' })
+          setLoading(false)
+          return
+        }
+        // Create form data from user metadata
+        const initialFormData: ProfileFormData = {
+          email: user.email || '',
+          first_name: user.user_metadata?.first_name || '',
+          last_name: user.user_metadata?.last_name || '',
+          phone: user.user_metadata?.phone || '',
+          address: user.user_metadata?.address || '',
+          city: user.user_metadata?.city || '',
+          state: user.user_metadata?.state || '',
+          postal_code: user.user_metadata?.postal_code || '',
+          emergency_contact: user.user_metadata?.emergency_contact || '',
+          emergency_phone: user.user_metadata?.emergency_phone || '',
+          additional_info: user.user_metadata?.additional_info || ''
+        }
+        setFormData(initialFormData)
         setLoading(false)
-        return
+      } catch (error) {
+        console.error("Unexpected error in fetchUserProfile:", error)
+        setMessage({ type: 'error', text: 'An unexpected error occurred.' })
+        setLoading(false)
       }
-
-      if (!user) {
-        console.log("No user found, redirecting to login.")
-        router.push('/login')
-        return
-      }
-      
-      const initialFormData: ProfileFormData = {
-        email: user.email || '',
-        first_name: user.user_metadata?.first_name || '',
-        last_name: user.user_metadata?.last_name || '',
-        phone: user.user_metadata?.phone || '',
-        address: user.user_metadata?.address || '',
-        city: user.user_metadata?.city || '',
-        state: user.user_metadata?.state || '',
-        postal_code: user.user_metadata?.postal_code || '',
-        emergency_contact: user.user_metadata?.emergency_contact || '',
-        emergency_phone: user.user_metadata?.emergency_phone || '',
-        additional_info: user.user_metadata?.additional_info || ''
-      }
-      
-      setFormData(initialFormData)
-      setLoading(false)
     }
-
     fetchUserProfile()
-  }, [supabase, router])
+  }, [user])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -101,30 +105,12 @@ export default function ProfilePage() {
     return <div className="max-w-3xl mx-auto py-12 text-center text-gray-500">Loading...</div>
   }
 
-  if (!formData && !loading) {
+  if ((message && message.type === 'error') || !formData) {
     return (
       <div className="max-w-3xl mx-auto py-12 text-center">
-        <h2 className="text-2xl font-bold mb-4">Profile Not Found</h2>
-        <p className="mb-6 text-gray-600">Could not load profile data. Please try logging in again.</p>
-        {message && (
-          <div className={`my-4 p-3 rounded-md text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-            {message.text}
-          </div>
-        )}
-        <Button onClick={() => router.push('/login')}>Go to Login</Button>
-      </div>
-    )
-  }
-  
-  if (!formData) {
-     return (
-      <div className="max-w-3xl mx-auto py-12 text-center text-gray-500">
-        Error loading profile. Please refresh or try logging in again.
-         {message && (
-          <div className={`my-4 p-3 rounded-md text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-            {message.text}
-          </div>
-        )}
+        <h2 className="text-2xl font-bold mb-4">Unable to Load Profile</h2>
+        <p className="mb-6 text-gray-600">Please try refreshing the page or logging in again.</p>
+        <Button onClick={() => window.location.reload()}>Refresh Page</Button>
       </div>
     )
   }

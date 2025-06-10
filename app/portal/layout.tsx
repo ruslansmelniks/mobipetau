@@ -7,14 +7,15 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
 import { NotificationBell } from "@/components/notification-bell"
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { isLoading, isAuthenticated, user, userRole, error } = useAuth('pet_owner')
+  const supabase = useSupabaseClient()
 
   const handleLogout = async () => {
-    // Use window.location to force reload and clear all state
-    await fetch('/api/logout', { method: 'POST' })
+    await supabase.auth.signOut()
     window.location.href = '/login'
   }
 
