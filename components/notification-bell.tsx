@@ -9,9 +9,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useSupabaseClient, useUser } from '@supabase/auth-helpers-react'
-import { formatDistanceToNow } from 'date-fns'
-import { useRouter } from 'next/navigation'
+import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { formatDistanceToNow } from 'date-fns'
 
 interface Notification {
   id: string
@@ -19,103 +19,140 @@ interface Notification {
   title: string
   message: string
   is_read: boolean
+  is_seen: boolean
   created_at: string
   appointment_id?: string
 }
 
 export function NotificationBell() {
+  const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [isOpen, setIsOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
   const supabase = useSupabaseClient()
   const user = useUser()
-  const router = useRouter()
-
-  useEffect(() => {
-    if (!user) return
-
-    fetchNotifications()
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel(`notifications:${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('New notification received:', payload)
-          setNotifications(prev => [payload.new as Notification, ...prev])
-          setUnreadCount(prev => prev + 1)
-          // Play notification sound if you have one
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user, supabase])
 
   const fetchNotifications = async () => {
     if (!user) return
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (error) {
+    
+    try {
+      const response = await fetch('/api/notifications')
+      if (response.ok) {
+        const data = await response.json()
+        setNotifications(data.notifications)
+        setUnreadCount(data.unreadCount)
+      }
+    } catch (error) {
       console.error('Error fetching notifications:', error)
-      return
+    } finally {
+      setLoading(false)
     }
+  }
 
-    setNotifications(data || [])
-    setUnreadCount(data?.filter(n => !n.is_read).length || 0)
+  useEffect(() => {
+    fetchNotifications()
+    
+    // Set up real-time subscription
+    if (user) {
+      const channel = supabase
+        .channel(`notifications-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            // Add new notification to the top
+            setNotifications(prev => [payload.new as Notification, ...prev])
+            setUnreadCount(prev => prev + 1)
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            // Update notification in the list
+            setNotifications(prev => 
+              prev.map(notif => 
+                notif.id === payload.new.id ? payload.new as Notification : notif
+              )
+            )
+            // Recalculate unread count
+            fetchNotifications()
+          }
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [user, supabase])
+
+  const handleOpen = async (open: boolean) => {
+    setIsOpen(open)
+    
+    // Mark notifications as seen when popover opens
+    if (open && notifications.filter(n => !n.is_seen).length > 0) {
+      const unseenIds = notifications
+        .filter(n => !n.is_seen)
+        .map(n => n.id)
+      
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notificationIds: unseenIds,
+          action: 'mark_seen'
+        })
+      })
+    }
   }
 
   const markAsRead = async (notificationId: string) => {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId)
-
-    if (!error) {
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
-      )
-      setUnreadCount(prev => Math.max(0, prev - 1))
-    }
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notificationIds: [notificationId],
+        action: 'mark_read'
+      })
+    })
+    
+    // Update local state
+    setNotifications(prev =>
+      prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
+    )
+    setUnreadCount(prev => Math.max(0, prev - 1))
   }
 
   const markAllAsRead = async () => {
-    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id)
+    const unreadIds = notifications
+      .filter(n => !n.is_read)
+      .map(n => n.id)
     
-    if (unreadIds.length === 0) return
-
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .in('id', unreadIds)
-
-    if (!error) {
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    if (unreadIds.length > 0) {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notificationIds: unreadIds,
+          action: 'mark_read'
+        })
+      })
+      
+      setNotifications(prev =>
+        prev.map(n => ({ ...n, is_read: true }))
+      )
       setUnreadCount(0)
-    }
-  }
-
-  const handleNotificationClick = async (notification: Notification) => {
-    await markAsRead(notification.id)
-    setIsOpen(false)
-    
-    if (notification.appointment_id) {
-      router.push(`/portal/bookings`)
     }
   }
 
@@ -133,19 +170,22 @@ export function NotificationBell() {
   }
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
+    <Popover open={isOpen} onOpenChange={handleOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+            <Badge 
+              variant="destructive" 
+              className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+            >
               {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
+            </Badge>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
-        <div className="flex items-center justify-between p-4 border-b">
+      <PopoverContent className="w-80" align="end">
+        <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Notifications</h3>
           {unreadCount > 0 && (
             <Button
@@ -158,47 +198,39 @@ export function NotificationBell() {
             </Button>
           )}
         </div>
-        <ScrollArea className="h-[400px]">
-          {notifications.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              No notifications yet
-            </div>
-          ) : (
-            <div className="divide-y">
+        
+        {loading ? (
+          <div className="py-8 text-center text-gray-500">Loading...</div>
+        ) : notifications.length === 0 ? (
+          <div className="py-8 text-center text-gray-500">No notifications yet</div>
+        ) : (
+          <ScrollArea className="h-[400px]">
+            <div className="space-y-2">
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
-                  className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                    !notification.is_read ? 'bg-blue-50' : ''
+                  className={`p-3 rounded-lg border transition-colors cursor-pointer ${
+                    notification.is_read 
+                      ? 'bg-gray-50 border-gray-200' 
+                      : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
                   }`}
-                  onClick={() => handleNotificationClick(notification)}
+                  onClick={() => !notification.is_read && markAsRead(notification.id)}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">
-                      {getNotificationIcon(notification.type)}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">
-                        {notification.title}
-                      </p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {notification.message}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        {formatDistanceToNow(new Date(notification.created_at), {
-                          addSuffix: true,
-                        })}
-                      </p>
-                    </div>
+                  <div className="flex items-start justify-between mb-1">
+                    <h4 className="font-medium text-sm">{notification.title}</h4>
                     {!notification.is_read && (
-                      <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2" />
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     )}
                   </div>
+                  <p className="text-xs text-gray-600 mb-1">{notification.message}</p>
+                  <p className="text-xs text-gray-400">
+                    {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                  </p>
                 </div>
               ))}
             </div>
-          )}
-        </ScrollArea>
+          </ScrollArea>
+        )}
       </PopoverContent>
     </Popover>
   )

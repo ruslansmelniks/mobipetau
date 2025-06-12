@@ -69,6 +69,7 @@ export default function VetJobsPage() {
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false)
   const [hasFetchedInitially, setHasFetchedInitially] = useState(false)
+  const [actualNewJobsCount, setActualNewJobsCount] = useState(0)
   const user = useUser()
   const supabase = useSupabaseClient()
 
@@ -241,6 +242,16 @@ export default function VetJobsPage() {
 
     return () => clearInterval(interval);
   }, [user, autoRefreshEnabled, loading, fetchAvailableJobs]);
+
+  // Update the useEffect that calls fetchAvailableJobs to also track views
+  useEffect(() => {
+    if (jobs.length > 0 && user) {
+      // Track that the vet has viewed these jobs
+      const jobIds = jobs.map(job => job.id)
+      trackViewedJobs(jobIds)
+      getNewJobsCount()
+    }
+  }, [jobs, user])
 
   const handleAcceptJob = async (jobId: string) => {
     setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
@@ -707,15 +718,55 @@ export default function VetJobsPage() {
     );
   };
 
+  // Add this function after the fetchAvailableJobs function
+  const trackViewedJobs = async (jobIds: string[]) => {
+    if (!user || jobIds.length === 0) return
+    
+    try {
+      // Use admin client to track views
+      const { error } = await supabase
+        .from('vet_job_views')
+        .upsert(
+          jobIds.map(id => ({
+            vet_id: user.id,
+            appointment_id: id
+          })),
+          { onConflict: 'vet_id,appointment_id' }
+        )
+      
+      if (error) {
+        console.error('Error tracking job views:', error)
+      }
+    } catch (err) {
+      console.error('Error in trackViewedJobs:', err)
+    }
+  }
+
+  // Add this function to get the real new job count
+  const getNewJobsCount = async () => {
+    if (!user) return
+    
+    try {
+      const { data, error } = await supabase
+        .rpc('get_new_jobs_count_for_vet', { vet_user_id: user.id })
+      
+      if (!error && data !== null) {
+        setActualNewJobsCount(data)
+      }
+    } catch (err) {
+      console.error('Error getting new jobs count:', err)
+    }
+  }
+
   return (
     <ErrorBoundary>
       <div className="max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-bold flex items-center gap-2">
             Available Jobs
-            {newJobCount > 0 && (
+            {actualNewJobsCount > 0 && (
               <Badge variant="destructive" className="ml-2">
-                {newJobCount} new
+                {actualNewJobsCount} new
               </Badge>
             )}
           </h1>
