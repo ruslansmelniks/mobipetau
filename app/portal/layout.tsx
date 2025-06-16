@@ -1,22 +1,62 @@
 "use client"
 
-import { useAuth } from '../hooks/useAuth'
-import Image from "next/image"
+import { useEffect, useState } from 'react'
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
 import { NotificationBell } from "@/components/notification-bell"
-import { useSupabaseClient } from '@supabase/auth-helpers-react'
+import { createClient } from '@/lib/supabase/client'
+import { Logo } from '@/components/logo'
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { isLoading, isAuthenticated, user, userRole, error } = useAuth('pet_owner')
-  const supabase = useSupabaseClient()
+  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<any>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/login'
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const supabase = createClient()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError) {
+          console.error('Auth error:', authError)
+          setError(authError.message)
+          router.push('/login')
+          return
+        }
+
+        if (!user) {
+          router.push('/login')
+          return
+        }
+
+        // Get user profile with role
+        const { data: profile } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        setUser(user)
+        setUserRole(profile?.role || 'pet_owner')
+      } catch (err) {
+        console.error('Error checking auth:', err)
+        setError('Failed to check authentication')
+        router.push('/login')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [router])
+
+  const handleLogout = () => {
+    router.push('/logout')
   }
 
   if (isLoading) {
@@ -30,7 +70,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     )
   }
 
-  if (!isAuthenticated || !user) {
+  if (!user) {
     return null // Let the redirect happen
   }
 
@@ -43,7 +83,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex justify-between items-center">
             <Link href="/" className="flex items-center">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
+              <Logo />
             </Link>
             <div className="flex items-center gap-4">
               <div className="text-sm mr-2">

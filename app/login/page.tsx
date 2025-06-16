@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
-import { logger } from "@/lib/logger"
+import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -17,37 +16,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
-  const supabase = useSupabaseClient()
-  const user = useUser()
-
-  // Redirect if already logged in
-  useEffect(() => {
-    // Only redirect if we have a confirmed user session
-    if (user && user.id) {
-      console.log('User already logged in, redirecting...', user.id);
-      const userRole = user.user_metadata?.role || 'pet_owner';
-      // Use replace to prevent back button issues
-      if (userRole === 'admin') {
-        router.replace('/admin');
-      } else if (userRole === 'vet') {
-        router.replace('/vet');
-      } else {
-        router.replace('/portal/bookings');
-      }
-    }
-  }, [user, router]);
-
-  // Don't render the form if user is already logged in
-  if (user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +31,8 @@ export default function LoginPage() {
       
       console.log('Starting login process...');
       
+      const supabase = createClient();
+      
       // Sign in with Supabase
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -76,19 +46,26 @@ export default function LoginPage() {
         return;
       }
 
-      if (!data.user) {
+      if (!data?.user) {
+        console.error('No user data in response:', data);
         setError("Login failed. Please try again.");
         setIsLoading(false);
         return;
       }
 
-      console.log('Login successful, user:', data.user.email);
+      // Log the full user object for debugging
+      console.log('Login successful, full user data:', {
+        id: data.user.id,
+        email: data.user.email,
+        role: data.user.user_metadata?.role,
+        metadata: data.user.user_metadata
+      });
       
       // Get the redirect URL from query params or default
       const searchParams = new URLSearchParams(window.location.search);
       const redirectTo = searchParams.get('redirectTo') || '/portal/bookings';
       
-      // Check user role
+      // Check user role with null checks
       const userRole = data.user.user_metadata?.role || 'pet_owner';
       let finalRedirect = redirectTo;
       
@@ -107,7 +84,13 @@ export default function LoginPage() {
       window.location.href = finalRedirect;
       // Don't set loading to false - let the page redirect
     } catch (err: any) {
-      console.error('Unexpected error:', err);
+      console.error('Unexpected error during login:', err);
+      // Log the full error object
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      });
       setError(err.message || "An unexpected error occurred during login. Please try again.");
       setIsLoading(false);
     }
@@ -119,7 +102,19 @@ export default function LoginPage() {
       <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
         <div className="flex items-center">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+            <Image 
+              src="/logo.png" 
+              alt="MobiPet Logo" 
+              width={96} 
+              height={32} 
+              className="h-[32px] w-auto" 
+              priority
+              onError={(e) => {
+                console.error('Logo failed to load');
+                const target = e.target as HTMLImageElement;
+                target.src = '/placeholder-logo.png';
+              }}
+            />
           </Link>
         </div>
         <nav className="hidden md:flex items-center space-x-8">
@@ -222,7 +217,19 @@ export default function LoginPage() {
         <div className="container mx-auto px-4 max-w-[1400px]">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-4 md:mb-0">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+              <Image 
+                src="/logo.png" 
+                alt="MobiPet Logo" 
+                width={96} 
+                height={32} 
+                className="h-[32px] w-auto" 
+                priority
+                onError={(e) => {
+                  console.error('Logo failed to load');
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/placeholder-logo.png';
+                }}
+              />
             </div>
             <div className="text-sm text-gray-500">© 2025 MobiPet. All rights reserved.</div>
           </div>

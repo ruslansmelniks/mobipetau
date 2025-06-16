@@ -8,6 +8,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: ['localhost'],
   },
   webpack: (config, { isServer }) => {
     // Fix for ReactCurrentBatchConfig warning
@@ -21,6 +22,22 @@ const nextConfig = {
       loader: 'ignore-loader',
       include: [/react-devtools/],
     })
+    // Suppress the warning about dynamic dependencies in Supabase Realtime
+    config.module = {
+      ...config.module,
+      exprContextCritical: false,
+    }
+    
+    // Handle other webpack configurations
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      }
+    }
+    
     return config
   }
 }

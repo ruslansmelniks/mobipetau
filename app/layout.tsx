@@ -1,32 +1,26 @@
-import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
-import SupabaseProvider from './SupabaseProvider'
-import { SmartLogo } from "@/components/smart-logo"
-import { NotificationBell } from "@/components/notification-bell"
-import { Providers } from '@/components/providers'
-import { GoogleMapsProvider } from './components/GoogleMapsProvider'
+import { Toaster } from '@/components/ui/toaster'
+import { GoogleMapsCleanup } from '@/components/GoogleMapsCleanup'
 
-export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata = {
+  title: 'MobiPet - Connect with Trusted Vets',
+  description: 'Find and book appointments with veterinarians in your area',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
     <html lang="en">
-      <body>
-        <SupabaseProvider>
-          <GoogleMapsProvider>
-            <Providers>
-              {children}
-            </Providers>
-          </GoogleMapsProvider>
-        </SupabaseProvider>
+      <body className={inter.className}>
+        <GoogleMapsCleanup />
+        {children}
+        <Toaster />
       </body>
     </html>
   )
