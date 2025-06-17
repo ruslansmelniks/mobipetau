@@ -23,10 +23,9 @@ export function Logo({ className = "" }: LogoProps) {
       <Image
         src="/logo.png"
         alt="MobiPet Logo"
-        width={40}
-        height={40}
-        style={{ width: 40, height: 'auto' }}
-        className="object-contain"
+        width={150}
+        height={50}
+        className="h-auto w-auto object-contain"
         onError={() => setError(true)}
         priority
       />
