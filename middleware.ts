@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
   })
 
   // Protected routes
-  const protectedRoutes = ['/dashboard', '/dashboard/profile', '/dashboard/appointments', '/dashboard/jobs']
+  const protectedRoutes = ['/portal', '/portal/profile', '/portal/appointments', '/portal/jobs']
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
