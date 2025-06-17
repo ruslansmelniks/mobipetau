@@ -1,24 +1,79 @@
 "use client"
 
-import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
+import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { Button } from "@/components/ui/button"
+import { createClient } from '@/lib/supabase/client'
+import { cn } from "@/lib/utils"
+
+type UserRole = 'vet' | 'pet_owner'
 
 export function PortalTabs() {
   const pathname = usePathname()
-  const router = useRouter()
-  const supabase = useSupabaseClient();
-  
-  const tabs = [
-    { name: "Profile", href: "/portal/profile" },
-    { name: "My bookings", href: "/portal/bookings" },
-    { name: "Messages", href: "/portal/messages" },
-    { name: "My pets", href: "/portal/pets" },
+  const [userRole, setUserRole] = useState<UserRole>('pet_owner')
+
+  useEffect(() => {
+    async function checkUserRole() {
+      try {
+        const supabase = createClient()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError || !user) {
+          console.error('Auth error:', authError)
+          return
+        }
+
+        // First try to get the role from the profiles table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (profileError) {
+          console.error('Profile error:', profileError)
+          // If profile doesn't exist, try to get role from auth.users
+          const { data: authUser, error: authUserError } = await supabase
+            .from('auth.users')
+            .select('raw_user_meta_data->role')
+            .eq('id', user.id)
+            .maybeSingle()
+
+          if (authUserError) {
+            console.error('Auth user error:', authUserError)
+            return
+          }
+
+          const role = authUser?.role as UserRole
+          setUserRole(role || 'pet_owner')
+          return
+        }
+
+        const role = profile?.role as UserRole
+        setUserRole(role || 'pet_owner')
+      } catch (err) {
+        console.error('Error checking user role:', err)
+      }
+    }
+
+    checkUserRole()
+  }, [])
+
+  const petOwnerTabs = [
+    { name: "Profile", href: "/dashboard/profile" },
+    { name: "Jobs", href: "/dashboard/jobs" },
+    { name: "Appointments", href: "/dashboard/appointments" },
+    { name: "Messages", href: "/dashboard/messages" },
   ]
+
+  const vetTabs = [
+    { name: "Profile", href: "/dashboard/profile" },
+    { name: "Appointments", href: "/dashboard/appointments" },
+    { name: "Messages", href: "/dashboard/messages" },
+  ]
+
+  const tabs = userRole === 'vet' ? vetTabs : petOwnerTabs
 
   const isActive = (path: string) => {
     return pathname === path || pathname.startsWith(`${path}/`)
@@ -33,20 +88,21 @@ export function PortalTabs() {
             href={tab.href}
             className={cn(
               "px-4 py-4 text-sm font-medium transition-colors relative",
-              isActive(tab.href) ? "text-teal-600" : "text-gray-600 hover:text-teal-600",
+              isActive(tab.href) ? "text-green-600 border-b-2 border-green-500" : "text-gray-600 hover:text-green-600 border-b-2 border-transparent",
             )}
           >
             {tab.name}
-            {isActive(tab.href) && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600" />}
           </Link>
         ))}
       </div>
-      <Button
-        className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-        asChild
-      >
-        <Link href="/book">Book appointment</Link>
-      </Button>
+      {userRole === 'pet_owner' && (
+        <Button
+          className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+          asChild
+        >
+          <Link href="/book">Book appointment</Link>
+        </Button>
+      )}
     </div>
   )
 }

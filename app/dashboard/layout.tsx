@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
 
-  const supabase = getSupabaseBrowserClient()
+  const supabase = createClient()
 
   useEffect(() => {
     const checkUser = async () => {

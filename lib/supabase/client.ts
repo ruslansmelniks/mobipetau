@@ -3,7 +3,7 @@ import type { Database } from '@/types/supabase'
 
 let client: ReturnType<typeof createBrowserClient> | null = null
 
-export function getSupabaseBrowserClient() {
+export function createClient() {
   if (!client) {
     client = createBrowserClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
