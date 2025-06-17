@@ -1,31 +1,36 @@
-import Image from "next/image"
+"use client"
+
+import Image from 'next/image'
+import { useState } from 'react'
 
 interface LogoProps {
-  width?: number
-  height?: number
   className?: string
 }
 
-export function Logo({ width = 96, height = 32, className = "" }: LogoProps) {
+export function Logo({ className = "" }: LogoProps) {
+  const [error, setError] = useState(false)
+
+  if (error) {
+    return (
+      <div className={`flex items-center space-x-2 ${className}`}>
+        <span className="text-xl font-bold text-[#4e968f]">MobiPet</span>
+      </div>
+    )
+  }
+
   return (
-    <Image 
-      src="/logo.png" 
-      alt="MobiPet Logo" 
-      width={width} 
-      height={height} 
-      className={className}
-      style={{ 
-        width: 'auto',
-        height: 'auto',
-        maxWidth: `${width}px`,
-        maxHeight: `${height}px`
-      }}
-      priority
-      onError={(e) => {
-        console.error('Logo failed to load');
-        const target = e.target as HTMLImageElement;
-        target.src = '/placeholder-logo.png';
-      }}
-    />
+    <div className={`flex items-center space-x-2 ${className}`}>
+      <Image
+        src="/logo.png"
+        alt="MobiPet Logo"
+        width={40}
+        height={40}
+        style={{ width: 40, height: 'auto' }}
+        className="object-contain"
+        onError={() => setError(true)}
+        priority
+      />
+      <span className="text-xl font-bold text-[#4e968f]">MobiPet</span>
+    </div>
   )
 } 
