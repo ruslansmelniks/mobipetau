@@ -61,10 +61,10 @@ export function PortalTabs() {
   }, [])
 
   const petOwnerTabs = [
-    { name: "Profile", href: "/dashboard/profile" },
-    { name: "Jobs", href: "/dashboard/jobs" },
-    { name: "Appointments", href: "/dashboard/appointments" },
-    { name: "Messages", href: "/dashboard/messages" },
+    { name: "Profile", href: "/portal/profile" },
+    { name: "Jobs", href: "/portal/jobs" },
+    { name: "Appointments", href: "/portal/appointments" },
+    { name: "Messages", href: "/portal/messages" },
   ]
 
   const vetTabs = [
