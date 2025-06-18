@@ -53,6 +53,23 @@ const calculateAge = (dateOfBirth: string): string => {
   return `${years} years`
 }
 
+// Add or update the age calculation function
+function calculateAgeAndUnit(dateOfBirth: string): { age: number | null, age_unit: 'years' | 'months' } {
+  if (!dateOfBirth) return { age: null, age_unit: 'years' };
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let years = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    years--;
+  }
+  if (years < 1) {
+    const months = (today.getFullYear() - birthDate.getFullYear()) * 12 + (today.getMonth() - birthDate.getMonth());
+    return { age: Math.max(0, months), age_unit: 'months' };
+  }
+  return { age: years, age_unit: 'years' };
+}
+
 // Form steps for the wizard
 const formSteps = [
   { id: "basic", title: "Basic Information" },
@@ -73,6 +90,7 @@ export default function PetsPage() {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
+  const [imageFile, setImageFile] = useState<File | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -92,10 +110,10 @@ export default function PetsPage() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // In a real app, you would upload this to a server
-      // For demo purposes, we'll just create a local URL
+      // Blob URL for preview
       const imageUrl = URL.createObjectURL(file)
       setPetImage(imageUrl)
+      setImageFile(file) // Save the file for upload
       setFormData({ ...formData, image: imageUrl })
     }
   }
@@ -113,57 +131,124 @@ export default function PetsPage() {
     setFormData({ ...formData, [name]: value })
   }
 
-  const handleAddPet = () => {
+  const handleAddPet = async () => {
+    if (!user) {
+      alert('User not found. Please log in again.');
+      return;
+    }
+    let uploadedImageUrl = null
+    if (imageFile) {
+      const fileExt = imageFile.name.split('.').pop()
+      const fileName = `${formData.name || 'pet'}-${Date.now()}.${fileExt}`
+      const { data, error } = await supabase.storage
+        .from('image')
+        .upload(fileName, imageFile)
+      if (error) {
+        alert('Failed to upload image: ' + error.message)
+        return // Do not proceed if upload fails
+      } else if (data) {
+        // Get the public URL
+        const { data: publicUrlData } = supabase.storage
+          .from('image')
+          .getPublicUrl(data.path)
+        uploadedImageUrl = publicUrlData?.publicUrl
+      }
+    }
+    const { age, age_unit } = calculateAgeAndUnit(formData.dateOfBirth || "");
     const newPet = {
-      id: `new-${Date.now()}`,
       name: formData.name || "",
       type: formData.type || "",
       breed: formData.breed || "",
-      dateOfBirth: formData.dateOfBirth || "",
-      age: calculateAge(formData.dateOfBirth || ""),
+      date_of_birth: formData.dateOfBirth || "",
+      age: age,
+      age_unit: age_unit,
       weight: formData.weight || "",
       gender: formData.gender || "Male",
       desexed: formData.desexed || "No",
       microchip: formData.microchip || "",
-      image: petImage || "/placeholder.svg?key=pet",
+      image: uploadedImageUrl || petImage || "/placeholder.svg?key=pet",
       temperament: formData.temperament || "",
       reactive: formData.reactive || "No",
-      additionalComments: formData.additionalComments || "",
-      medicalHistory: formData.additionalComments || "", // For backward compatibility
+      additional_comments: formData.additionalComments || "",
+      medical_history: formData.additionalComments || "",
+      owner_id: user.id,
     }
-
-    setPets([...pets, newPet])
+    console.log('Saving pet with image:', uploadedImageUrl)
+    console.log('Pet data being saved:', newPet)
+    const { data: insertedPet, error: insertError } = await supabase
+      .from('pets')
+      .insert([newPet])
+      .select()
+      .single();
+    if (insertError) {
+      alert('Failed to save pet: ' + insertError.message);
+      return;
+    }
+    console.log('Pet saved:', insertedPet)
+    setPets([...pets, insertedPet]);
     setIsAddDialogOpen(false)
     setPetImage(null)
+    setImageFile(null)
     setCurrentStep(0)
     setFormData({})
   }
 
-  const handleEditPet = () => {
+  const handleEditPet = async () => {
     if (!petToEdit) return
-
+    let uploadedImageUrl = null
+    if (imageFile) {
+      const fileExt = imageFile.name.split('.').pop()
+      const fileName = `${formData.name || 'pet'}-${Date.now()}.${fileExt}`
+      const { data, error } = await supabase.storage
+        .from('image')
+        .upload(fileName, imageFile)
+      if (error) {
+        alert('Failed to upload image: ' + error.message)
+        return // Do not proceed if upload fails
+      } else if (data) {
+        // Get the public URL
+        const { data: publicUrlData } = supabase.storage
+          .from('image')
+          .getPublicUrl(data.path)
+        uploadedImageUrl = publicUrlData?.publicUrl
+      }
+    }
+    const { age, age_unit } = calculateAgeAndUnit(formData.dateOfBirth || petToEdit.date_of_birth || "");
     const updatedPet = {
-      ...petToEdit,
       name: formData.name || petToEdit.name,
       type: formData.type || petToEdit.type,
       breed: formData.breed || petToEdit.breed,
-      dateOfBirth: formData.dateOfBirth || petToEdit.dateOfBirth,
-      age: calculateAge(formData.dateOfBirth || petToEdit.dateOfBirth),
+      date_of_birth: formData.dateOfBirth || petToEdit.date_of_birth,
+      age: age,
+      age_unit: age_unit,
       weight: formData.weight || petToEdit.weight,
       gender: formData.gender || petToEdit.gender,
       desexed: formData.desexed || petToEdit.desexed,
       microchip: formData.microchip || petToEdit.microchip,
-      image: petImage || petToEdit.image,
+      image: uploadedImageUrl || petImage || petToEdit.image,
       temperament: formData.temperament || petToEdit.temperament,
       reactive: formData.reactive || petToEdit.reactive,
-      additionalComments: formData.additionalComments || petToEdit.additionalComments,
-      medicalHistory: formData.additionalComments || petToEdit.additionalComments, // For backward compatibility
+      additional_comments: formData.additionalComments || petToEdit.additionalComments,
+      medical_history: formData.additionalComments || petToEdit.additionalComments,
     }
-
-    setPets(pets.map((pet) => (pet.id === petToEdit.id ? updatedPet : pet)))
+    console.log('Updating pet with image:', uploadedImageUrl)
+    console.log('Pet data being updated:', updatedPet)
+    const { data: updatedPetData, error: updateError } = await supabase
+      .from('pets')
+      .update(updatedPet)
+      .eq('id', petToEdit.id)
+      .select()
+      .single();
+    if (updateError) {
+      alert('Failed to update pet: ' + updateError.message);
+      return;
+    }
+    console.log('Pet updated:', updatedPetData)
+    setPets(pets.map((pet) => (pet.id === petToEdit.id ? updatedPetData : pet)));
     setIsEditDialogOpen(false)
     setPetToEdit(null)
     setPetImage(null)
+    setImageFile(null)
     setCurrentStep(0)
     setFormData({})
   }
@@ -182,14 +267,14 @@ export default function PetsPage() {
       name: pet.name,
       type: pet.type,
       breed: pet.breed,
-      dateOfBirth: pet.dateOfBirth,
+      dateOfBirth: pet.date_of_birth,
       weight: pet.weight,
       gender: pet.gender,
       desexed: pet.desexed,
       microchip: pet.microchip,
       temperament: pet.temperament,
       reactive: pet.reactive,
-      additionalComments: pet.additionalComments,
+      additionalComments: pet.additional_comments,
     })
     setIsEditDialogOpen(true)
   }
@@ -618,7 +703,7 @@ export default function PetsPage() {
               <CardContent className="p-6">
                 <h2 className="text-xl font-semibold mb-1">{pet.name}</h2>
                 <p className="text-gray-500 mb-4">
-                  {pet.breed} • {pet.age}
+                  {pet.breed} • {pet.age} {pet.age_unit}
                 </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
