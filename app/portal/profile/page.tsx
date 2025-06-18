@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 
 interface UserProfile {
   id: string;
@@ -31,7 +34,6 @@ export default function ProfilePage() {
       setLoading(true);
       setError(null);
 
-      // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
       if (authError || !user) {
@@ -39,7 +41,6 @@ export default function ProfilePage() {
         return;
       }
 
-      // Fetch user profile from users table
       const { data: profileData, error: profileError } = await supabase
         .from('users')
         .select('*')
@@ -65,7 +66,7 @@ export default function ProfilePage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4e968f] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading profile...</p>
         </div>
       </div>
@@ -77,77 +78,82 @@ export default function ProfilePage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <p className="text-red-600">{error}</p>
-          <button 
+          <Button 
             onClick={loadProfile}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="mt-4 bg-[#4e968f] hover:bg-[#43847e]"
           >
             Try Again
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">My Profile</h1>
+    <div className="max-w-3xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">My Profile</h1>
       
       {profile && (
-        <div className="bg-white shadow rounded-lg p-6 max-w-2xl">
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-gray-500">Email</label>
-              <p className="mt-1">{profile.email}</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-500">First Name</label>
-                <p className="mt-1">{profile.first_name || 'Not set'}</p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Personal Information</CardTitle>
+            <CardDescription>
+              View and manage your personal information
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-500">Email</Label>
+                <p className="text-gray-900">{profile.email}</p>
               </div>
               
-              <div>
-                <label className="text-sm font-medium text-gray-500">Last Name</label>
-                <p className="mt-1">{profile.last_name || 'Not set'}</p>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-500">Phone</Label>
+                <p className="text-gray-900">{profile.phone || 'Not set'}</p>
               </div>
             </div>
-            
-            <div>
-              <label className="text-sm font-medium text-gray-500">Phone</label>
-              <p className="mt-1">{profile.phone || 'Not set'}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-500">First Name</Label>
+                <p className="text-gray-900">{profile.first_name || 'Not set'}</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-500">Last Name</Label>
+                <p className="text-gray-900">{profile.last_name || 'Not set'}</p>
+              </div>
             </div>
-            
-            <div>
-              <label className="text-sm font-medium text-gray-500">Account Type</label>
-              <p className="mt-1 capitalize">{profile.role || 'pet_owner'}</p>
+
+            <div className="pt-4 border-t">
+              <h3 className="font-medium text-lg mb-4">Account Details</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-500">Account Type</Label>
+                  <p className="text-gray-900 capitalize">{profile.role || 'pet_owner'}</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-500">Member Since</Label>
+                  <p className="text-gray-900">
+                    {profile.created_at 
+                      ? new Date(profile.created_at).toLocaleDateString()
+                      : 'Unknown'}
+                  </p>
+                </div>
+              </div>
             </div>
-            
-            <div>
-              <label className="text-sm font-medium text-gray-500">Member Since</label>
-              <p className="mt-1">
-                {profile.created_at 
-                  ? new Date(profile.created_at).toLocaleDateString()
-                  : 'Unknown'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="mt-6 flex gap-4">
-            <button 
+          </CardContent>
+          <CardFooter>
+            <Button 
               onClick={() => router.push('/portal/profile/edit')}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
             >
               Edit Profile
-            </button>
-            
-            <button 
-              onClick={() => router.push('/portal')}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
+            </Button>
+          </CardFooter>
+        </Card>
       )}
     </div>
   );

@@ -23,13 +23,13 @@ export function Logo({ className = "" }: LogoProps) {
       <Image
         src="/logo.png"
         alt="MobiPet Logo"
-        width={150}
-        height={50}
-        className="h-auto w-auto object-contain"
+        width={40}
+        height={40}
+        style={{ width: 'auto', height: '40px' }}
+        className="object-contain"
         onError={() => setError(true)}
         priority
       />
-      <span className="text-xl font-bold text-[#4e968f]">MobiPet</span>
     </div>
   )
 } 

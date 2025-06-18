@@ -62,7 +62,7 @@ export function PortalTabs() {
 
   const petOwnerTabs = [
     { name: "Profile", href: "/portal/profile" },
-    { name: "Jobs", href: "/portal/jobs" },
+    { name: "My Pets", href: "/portal/pets" },
     { name: "Appointments", href: "/portal/appointments" },
     { name: "Messages", href: "/portal/messages" },
   ]
@@ -88,7 +88,7 @@ export function PortalTabs() {
             href={tab.href}
             className={cn(
               "px-4 py-4 text-sm font-medium transition-colors relative",
-              isActive(tab.href) ? "text-green-600 border-b-2 border-green-500" : "text-gray-600 hover:text-green-600 border-b-2 border-transparent",
+              isActive(tab.href) ? "text-[#4e968f] border-b-2 border-[#4e968f]" : "text-gray-600 hover:text-[#4e968f] border-b-2 border-transparent",
             )}
           >
             {tab.name}

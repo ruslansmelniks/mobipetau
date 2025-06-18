@@ -4,9 +4,9 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { Plus, Pencil, Trash2, AlertCircle, ArrowLeft, ArrowRight, Check } from "lucide-react"
+import { Plus, Pencil, Trash2, AlertCircle, ArrowLeft, ArrowRight, Check, PlusCircle, Edit2, FileText, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -30,6 +30,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 // Helper function to calculate age and age unit from date of birth
 function calculateAgeAndUnit(dateOfBirth: string): { age: number | null, age_unit: 'years' | 'months' } {
@@ -55,10 +57,26 @@ const formSteps = [
   { id: "behavior", title: "Behavior & Notes" },
 ]
 
+interface Pet {
+  id: string;
+  name: string;
+  type: string;
+  breed?: string;
+  age?: number;
+  weight?: number;
+  image_url?: string;
+  medical_history?: string;
+  vaccinations?: Array<{
+    name: string;
+    date: string;
+  }>;
+}
+
 export default function PetsPage() {
   const user = useUser()
-  const supabase = useSupabaseClient()
-  const [pets, setPets] = useState<any[]>([])
+  const supabase = createClient()
+  const router = useRouter()
+  const [pets, setPets] = useState<Pet[]>([])
   const [petToEdit, setPetToEdit] = useState<any | null>(null)
   const [petToDelete, setPetToDelete] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -68,21 +86,47 @@ export default function PetsPage() {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    supabase
-      .from("pets")
-      .select("*")
-      .eq("owner_id", user.id)
-      .then(({ data }) => {
-        setPets(data || [])
-        setLoading(false)
-      })
+    loadPets()
   }, [user])
 
   const hasPets = pets.length > 0
+
+  const loadPets = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        router.push('/login')
+        return
+      }
+
+      const { data: petsData, error: petsError } = await supabase
+        .from('pets')
+        .select('*')
+        .eq('owner_id', user.id)
+
+      if (petsError) {
+        console.error('Error fetching pets:', petsError)
+        setError('Failed to load pets')
+        return
+      }
+
+      setPets(petsData || [])
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -594,117 +638,138 @@ export default function PetsPage() {
   }
 
   if (loading) {
-    return <div className="max-w-5xl mx-auto py-12 text-center text-gray-500">Loading...</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4e968f] mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading pets...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-red-600">{error}</p>
+          <Button 
+            onClick={loadPets}
+            className="mt-4 bg-[#4e968f] hover:bg-[#43847e]"
+          >
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">My Pets</h1>
-      {!hasPets && (
-        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md px-4 py-3 mb-6">
-          <AlertCircle className="h-5 w-5 text-yellow-600" />
-          <span>Please add at least one pet to book an appointment.</span>
-        </div>
-      )}
-      <div className="flex justify-between items-center mb-6">
-        <Dialog
-          open={isAddDialogOpen}
-          onOpenChange={(open) => {
-            setIsAddDialogOpen(open)
-            if (!open) {
-              setCurrentStep(0)
-              setFormData({})
-              setPetImage(null)
-            }
-          }}
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">My Pets</h1>
+        <Button
+          className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+          onClick={() => router.push('/portal/pets/add')}
         >
-          <DialogTrigger asChild>
-            <Button className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]">
-              <Plus className="mr-2 h-4 w-4" /> Add Pet
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Add a pet</DialogTitle>
-              <DialogDescription>
-                {formSteps[currentStep].title} - Step {currentStep + 1} of {formSteps.length}
-              </DialogDescription>
-            </DialogHeader>
-            {renderStepIndicator()}
-            {renderCurrentStep()}
-            {renderStepButtons()}
-          </DialogContent>
-        </Dialog>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add New Pet
+        </Button>
       </div>
 
-      {pets.length === 0 ? (
-        <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="h-8 w-8 text-gray-400" />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">No pets added yet</h2>
-          <p className="text-gray-600 mb-6">Add your pets to manage their health records and appointments.</p>
-          <Button
-            className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add Your First Pet
-          </Button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {pets.map((pet) => (
-            <Card key={pet.id} className="overflow-hidden">
-              <div className="h-48 relative">
-                <Image src={pet.image || "/placeholder.svg"} alt={pet.name} fill className="object-cover" />
-              </div>
-              <CardContent className="p-6">
-                <h2 className="text-xl font-semibold mb-1">{pet.name}</h2>
-                <p className="text-gray-500 mb-4">
-                  {pet.breed} • {pet.age !== null && pet.age !== undefined ? (pet.age_unit === 'months' ? `${pet.age} month${pet.age !== 1 ? 's' : ''}` : `${pet.age} year${pet.age !== 1 ? 's' : ''}`) : 'Unknown age'}
-                </p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Type:</span>
-                    <span>{pet.type}</span>
+      <div className="grid gap-6 md:grid-cols-2">
+        {pets.length > 0 ? (
+          pets.map((pet) => (
+            <Card key={pet.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>{pet.name}</CardTitle>
+                    <CardDescription>
+                      {pet.type} {pet.breed && `• ${pet.breed}`}
+                    </CardDescription>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Weight:</span>
-                    <span>{pet.weight} kg</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Gender:</span>
-                    <span>{pet.gender}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Desexed:</span>
-                    <span>{pet.desexed || "No"}</span>
-                  </div>
-                  {pet.microchip && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Microchip:</span>
-                      <span className="truncate ml-2 max-w-[120px]">{pet.microchip}</span>
+                  {pet.image_url ? (
+                    <Image
+                      src={pet.image_url}
+                      alt={pet.name}
+                      width={64}
+                      height={64}
+                      className="rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
+                      <span className="text-2xl font-bold text-teal-600">
+                        {pet.name[0]}
+                      </span>
                     </div>
                   )}
                 </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Age</Label>
+                    <p className="text-gray-900">{pet.age ? `${pet.age} years` : 'Not specified'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Weight</Label>
+                    <p className="text-gray-900">{pet.weight ? `${pet.weight} kg` : 'Not specified'}</p>
+                  </div>
+                </div>
+
+                {pet.vaccinations && pet.vaccinations.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Recent Vaccinations</Label>
+                    <div className="mt-2 space-y-2">
+                      {pet.vaccinations.slice(0, 3).map((vaccination, index) => (
+                        <div key={index} className="flex items-center text-sm text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2 text-teal-500" />
+                          {vaccination.name} - {new Date(vaccination.date).toLocaleDateString()}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
-              <CardFooter className="flex justify-between p-6 pt-0">
-                <Button variant="outline" size="sm" onClick={() => openEditDialog(pet)}>
-                  <Pencil className="mr-2 h-4 w-4" /> Edit
+              <CardFooter className="flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(`/portal/pets/${pet.id}/medical-history`)}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Medical History
                 </Button>
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => openDeleteDialog(pet.id)}
+                  onClick={() => router.push(`/portal/pets/${pet.id}/edit`)}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  <Edit2 className="mr-2 h-4 w-4" />
+                  Edit Pet
                 </Button>
               </CardFooter>
             </Card>
-          ))}
-        </div>
-      )}
+          ))
+        ) : (
+          <Card className="col-span-2">
+            <CardHeader>
+              <CardTitle>No Pets Added Yet</CardTitle>
+              <CardDescription>
+                Add your first pet to get started with MobiPet services.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+                onClick={() => router.push('/portal/pets/add')}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add New Pet
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Edit Pet Dialog */}
       <Dialog
