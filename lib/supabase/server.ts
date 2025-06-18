@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import type { Database } from '@/types/supabase'
 
 export async function createClient() {
-  const cookieStore = await cookies()
+  const cookieStore = cookies()
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,10 +13,9 @@ export async function createClient() {
         async getAll() {
           return cookieStore.getAll().map(({ name, value }) => ({ name, value }))
         },
-        async setAll(cookiesToSet) {
-          for (const { name, value, ...options } of cookiesToSet) {
-            cookieStore.set({ name, value, ...options })
-          }
+        // Prevent cookie modification in Server Components
+        async setAll(_cookiesToSet) {
+          // No-op: Do not set cookies in Server Components
         }
       }
     }
