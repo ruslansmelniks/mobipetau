@@ -29,9 +29,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 // Helper function to calculate age and age unit from date of birth
 function calculateAgeAndUnit(dateOfBirth: string): { age: number | null, age_unit: 'years' | 'months' } {
@@ -73,8 +72,8 @@ interface Pet {
 }
 
 export default function PetsPage() {
-  const user = useUser()
   const supabase = createClient()
+  const [user, setUser] = useState<any>(null)
   const router = useRouter()
   const [pets, setPets] = useState<Pet[]>([])
   const [petToEdit, setPetToEdit] = useState<any | null>(null)
@@ -89,39 +88,44 @@ export default function PetsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!user) return
-    setLoading(true)
-    loadPets()
-  }, [user])
-
-  const hasPets = pets.length > 0
-
-  const loadPets = async () => {
-    try {
+    const fetchUserAndPets = async () => {
       setLoading(true)
-      setError(null)
-
       const { data: { user }, error: authError } = await supabase.auth.getUser()
-      
       if (authError || !user) {
+        console.error('No user found in pets page', authError)
+        setUser(null)
+        setLoading(false)
         router.push('/login')
         return
       }
+      setUser(user)
+      await loadPets(user)
+    }
+    fetchUserAndPets()
+  }, [])
 
+  const hasPets = pets.length > 0
+
+  const loadPets = async (userObj: any) => {
+    try {
+      setLoading(true)
+      setError(null)
+      if (!userObj) {
+        setPets([])
+        return
+      }
       const { data: petsData, error: petsError } = await supabase
         .from('pets')
         .select('*')
-        .eq('owner_id', user.id)
-
+        .eq('owner_id', userObj.id)
       if (petsError) {
         console.error('Error fetching pets:', petsError)
         setError('Failed to load pets')
         return
       }
-
       setPets(petsData || [])
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error('Unexpected error in loadPets:', err)
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)
@@ -665,111 +669,70 @@ export default function PetsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="container mx-auto max-w-[1400px] px-4 py-8">
+      <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">My Pets</h1>
-        <Button
-          className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-          onClick={() => router.push('/portal/pets/add')}
-        >
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Add New Pet
+        <Button className="bg-[#4e968f] hover:bg-[#43847e]" onClick={() => setIsAddDialogOpen(true)}>
+          <PlusCircle className="mr-2 h-5 w-5" /> Add New Pet
         </Button>
       </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        {pets.length > 0 ? (
-          pets.map((pet) => (
-            <Card key={pet.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle>{pet.name}</CardTitle>
-                    <CardDescription>
-                      {pet.type} {pet.breed && `• ${pet.breed}`}
-                    </CardDescription>
-                  </div>
-                  {pet.image_url ? (
+      {loading ? (
+        <div className="flex items-center justify-center min-h-[200px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4e968f] mx-auto"></div>
+        </div>
+      ) : error ? (
+        <div className="text-center text-red-600">{error}</div>
+      ) : hasPets ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {pets.map((pet) => (
+            <Card key={pet.id} className="relative group cursor-default">
+              <CardHeader className="flex flex-row items-center gap-4 pb-2">
+                {pet.image_url ? (
+                  <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
                     <Image
                       src={pet.image_url}
                       alt={pet.name}
                       width={64}
                       height={64}
-                      className="rounded-full object-cover"
+                      className="object-cover h-16 w-16"
                     />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
-                      <span className="text-2xl font-bold text-teal-600">
-                        {pet.name[0]}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Age</Label>
-                    <p className="text-gray-900">{pet.age ? `${pet.age} years` : 'Not specified'}</p>
                   </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Weight</Label>
-                    <p className="text-gray-900">{pet.weight ? `${pet.weight} kg` : 'Not specified'}</p>
-                  </div>
-                </div>
-
-                {pet.vaccinations && pet.vaccinations.length > 0 && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Recent Vaccinations</Label>
-                    <div className="mt-2 space-y-2">
-                      {pet.vaccinations.slice(0, 3).map((vaccination, index) => (
-                        <div key={index} className="flex items-center text-sm text-gray-600">
-                          <Calendar className="h-4 w-4 mr-2 text-teal-500" />
-                          {vaccination.name} - {new Date(vaccination.date).toLocaleDateString()}
-                        </div>
-                      ))}
-                    </div>
+                ) : (
+                  <div className="h-16 w-16 rounded-full bg-teal-100 flex items-center justify-center text-2xl font-bold text-[#4e968f]">
+                    {pet.name?.[0]?.toUpperCase() || '?'}
                   </div>
                 )}
+                <div>
+                  <CardTitle className="text-2xl font-bold mb-1">{pet.name}</CardTitle>
+                  <CardDescription className="capitalize">{pet.type} {pet.breed && <>• {pet.breed}</>}</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-row justify-between items-end pt-0">
+                <div>
+                  <div className="mb-2 text-gray-700">
+                    <span className="block">Age</span>
+                    <span className="font-medium">{pet.age ? `${pet.age} years` : '—'}</span>
+                  </div>
+                  <div className="mb-2 text-gray-700">
+                    <span className="block">Weight</span>
+                    <span className="font-medium">{pet.weight ? `${pet.weight} kg` : '—'}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 items-end">
+                  <Button variant="outline" size="sm" className="mb-2" onClick={() => {/* TODO: Show medical history modal */}}>
+                    <FileText className="h-4 w-4 mr-1" /> Medical History
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => { setPetToEdit(pet); setIsEditDialogOpen(true); }}>
+                    <Edit2 className="h-4 w-4 mr-1" /> Edit Pet
+                  </Button>
+                </div>
               </CardContent>
-              <CardFooter className="flex justify-between">
-                <Button
-                  variant="outline"
-                  onClick={() => router.push(`/portal/pets/${pet.id}/medical-history`)}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Medical History
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => router.push(`/portal/pets/${pet.id}/edit`)}
-                >
-                  <Edit2 className="mr-2 h-4 w-4" />
-                  Edit Pet
-                </Button>
-              </CardFooter>
             </Card>
-          ))
-        ) : (
-          <Card className="col-span-2">
-            <CardHeader>
-              <CardTitle>No Pets Added Yet</CardTitle>
-              <CardDescription>
-                Add your first pet to get started with MobiPet services.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-                onClick={() => router.push('/portal/pets/add')}
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add New Pet
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center text-gray-600">No pets added yet. Click "Add New Pet" to get started.</div>
+      )}
 
       {/* Edit Pet Dialog */}
       <Dialog
