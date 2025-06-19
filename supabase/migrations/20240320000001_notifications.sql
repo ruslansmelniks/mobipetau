@@ -25,4 +25,57 @@ CREATE POLICY "System can create notifications" ON notifications
   FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Users can update their own notifications" ON notifications
-  FOR UPDATE USING (auth.uid() = user_id); 
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- Create function to notify vets of new appointments
+CREATE OR REPLACE FUNCTION notify_vets_of_new_appointment()
+RETURNS TRIGGER AS $$
+DECLARE
+  vet_id UUID;
+  pet_name TEXT;
+  owner_name TEXT;
+BEGIN
+  -- Get pet name
+  SELECT name INTO pet_name
+  FROM pets
+  WHERE id = NEW.pet_id;
+
+  -- Get owner name
+  SELECT first_name || ' ' || last_name INTO owner_name
+  FROM users
+  WHERE id = NEW.pet_owner_id;
+
+  -- Notify all vets
+  FOR vet_id IN 
+    SELECT id FROM users WHERE role = 'vet'
+  LOOP
+    INSERT INTO notifications (
+      user_id,
+      message,
+      type,
+      reference_id,
+      reference_type
+    ) VALUES (
+      vet_id,
+      format('New appointment request from %s for %s on %s at %s', 
+        owner_name, 
+        pet_name, 
+        NEW.date, 
+        NEW.time_slot
+      ),
+      'new_appointment',
+      NEW.id,
+      'appointment'
+    );
+  END LOOP;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for new appointments
+DROP TRIGGER IF EXISTS notify_vets_on_new_appointment ON appointments;
+CREATE TRIGGER notify_vets_on_new_appointment
+  AFTER INSERT ON appointments
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_vets_of_new_appointment(); 

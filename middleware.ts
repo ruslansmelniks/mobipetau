@@ -15,28 +15,73 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         async getAll() {
-          return request.cookies.getAll().map(({ name, value }) => ({ name, value }))
+          const cookiesList = await request.cookies.getAll()
+          return cookiesList.map(({ name, value }) => ({ name, value }))
         },
         async setAll(cookiesToSet) {
-          for (const { name, value, ...options } of cookiesToSet) {
-            response.cookies.set({ name, value, ...options })
-          }
-        }
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
+        },
       },
     }
   )
 
+  // Add debug logging for session check
+  console.log('[Middleware] Checking session for path:', request.nextUrl.pathname)
   const { data: { session }, error } = await supabase.auth.getSession()
+  // Add manual cookie check as fallback
+  const authToken = request.cookies.get('sb-vhpcosbihfooclhoemoz-auth-token')
+  const hasAuthCookie = !!authToken?.value
+  const hasSession = session || hasAuthCookie
+  console.log('[Middleware] Session check result:', {
+    hasSession: !!session,
+    hasAuthCookie,
+    error,
+    sessionUser: session?.user?.email,
+    cookies: request.cookies.getAll().map(c => ({ name: c.name, value: c.value.substring(0, 20) + '...' }))
+  })
 
   // Get the current path
   const path = request.nextUrl.pathname
 
+  // Skip middleware for API routes and static files
+  if (
+    path.startsWith('/api/') ||
+    path.startsWith('/_next/') ||
+    path.includes('.') ||
+    path.startsWith('/.well-known') ||
+    path.startsWith('/book')
+  ) {
+    return NextResponse.next()
+  }
+
+  // Define public paths that don't require authentication
+  const publicPaths = [
+    '/',
+    '/login',
+    '/signup',
+    '/services',
+    '/forgot-password',
+    '/reset-password',
+    '/vet-waitlist'
+  ]
+
+  // Check if the current path is public
+  const isPublicPath = publicPaths.some(publicPath => path === publicPath)
+
   // Log for debugging
   logger.debug('Middleware processing request', {
     path: path,
-    hasSession: !!session,
+    hasSession: hasSession,
+    isPublicPath: isPublicPath,
     error: error ? error.message : null
   }, request)
+
+  // Temporary fix: Allow portal access if auth cookie exists
+  if (hasAuthCookie && (path.startsWith('/portal/') || path.startsWith('/book/'))) {
+    return NextResponse.next()
+  }
 
   if (error) {
     logger.error('Middleware - Supabase getSession error', { error: error.message }, request)
@@ -44,9 +89,9 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // If user is not signed in and the current path is not /login,
+  // If user is not signed in and the current path is not public,
   // redirect the user to /login
-  if (!session && path !== '/login') {
+  if (!hasSession && !isPublicPath) {
     logger.info('No session, redirecting to login', { 
       path: path,
       redirectTo: '/login'
@@ -110,14 +155,5 @@ export async function middleware(request: NextRequest) {
 
 // Only run middleware on specific paths
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)']
 } 

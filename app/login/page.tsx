@@ -11,6 +11,7 @@ import Image from "next/image"
 import { logger } from "@/lib/logger"
 
 export default function LoginPage() {
+  console.log('Login page rendered')
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -20,68 +21,23 @@ export default function LoginPage() {
   const supabase = createClientComponentClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!email || !password) {
-      setError("Please enter both email and password");
-      return;
+    e.preventDefault()
+    console.log('Login attempt started', { email, password: password ? 'provided' : 'missing' })
+    setError("")
+    setIsLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (error) {
+      console.error('Login error:', error)
+      setError(error.message)
+      setIsLoading(false)
+    } else {
+      console.log('Login successful, redirecting...')
+      window.location.href = '/portal/bookings'
     }
-
-    try {
-      setIsLoading(true);
-      
-      logger.info('Attempting login', { email });
-      
-      // Supabase signin
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        logger.error('Login failed', { 
-          email,
-          error: signInError.message 
-        });
-        setError(signInError.message || "Invalid email or password.");
-        setIsLoading(false);
-        return;
-      }
-
-      logger.info('Login successful', { 
-        userId: data.user?.id,
-        email: data.user?.email,
-        role: data.user?.user_metadata?.role || data.user?.app_metadata?.role
-      });
-      
-      // Check user role from metadata
-      const userRole = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
-      
-      let redirectPath = '/portal/bookings';
-      if (userRole === 'admin') {
-        redirectPath = '/admin';
-      } else if (userRole === 'vet') {
-        redirectPath = '/vet';
-      }
-
-      logger.info('Redirecting user after login', {
-        userId: data.user?.id,
-        role: userRole,
-        redirectPath
-      });
-
-      router.push(redirectPath);
-    } catch (err: any) {
-      logger.error('Unexpected login error', {
-        email,
-        error: err.message
-      });
-      setError(err.message || "An unexpected error occurred during login. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -99,7 +55,7 @@ export default function LoginPage() {
           <Link href="/services" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Locations
           </Link>
-          <Link href="/book" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+          <Link href="/portal/bookings" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Book appointment
           </Link>
         </nav>

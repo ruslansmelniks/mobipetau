@@ -102,7 +102,7 @@ export default function SignUpPage() {
           <Link href="/services" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Locations
           </Link>
-          <Link href="/book" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+          <Link href="/portal/bookings" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Book appointment
           </Link>
         </nav>

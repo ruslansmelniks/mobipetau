@@ -208,7 +208,7 @@ export default function Dashboard() {
             <div className="p-6 bg-gray-50 border-t">
               <div className="flex flex-wrap justify-between gap-4">
                 <Button variant="outline" asChild>
-                  <Link href="/book">Book another appointment</Link>
+                  <Link href="/portal/bookings">Book another appointment</Link>
                 </Button>
                 <div className="flex flex-wrap gap-3">
                   <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50">
@@ -233,7 +233,7 @@ export default function Dashboard() {
               className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
               asChild
             >
-              <Link href="/book">Book an appointment</Link>
+              <Link href="/portal/bookings">Book an appointment</Link>
             </Button>
           </div>
         </div>

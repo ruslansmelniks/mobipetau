@@ -19,7 +19,7 @@ export default function ServicesPage() {
             <Link href="#" className="text-base font-medium text-gray-700">
               Locations
             </Link>
-            <Link href="/book" className="text-base font-medium text-gray-700">
+            <Link href="/portal/bookings" className="text-base font-medium text-gray-700">
               Book appointment
             </Link>
             <Link href="#" className="text-base font-medium text-gray-700">
@@ -65,7 +65,7 @@ export default function ServicesPage() {
             their long-term health and safety.
           </p>
           <div className="mt-8 flex gap-4 justify-center">
-            <Link href="/book">
+            <Link href="/portal/bookings">
               <Button className="bg-[#4e968f] hover:bg-[#43847e]">Schedule a visit</Button>
             </Link>
           </div>
@@ -461,7 +461,7 @@ export default function ServicesPage() {
             <p className="text-gray-700 mb-8">
               Can't find the answer you're looking for? Please chat to our friendly team.
             </p>
-            <Link href="/book">
+            <Link href="/portal/bookings">
               <Button size="lg" className="bg-[#4e968f] hover:bg-[#43847e]">
                 Book services
               </Button>

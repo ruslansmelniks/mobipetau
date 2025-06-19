@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { createBrowserClient } from '@supabase/ssr'
+import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
 
 // Define a simple appointment type as per user request
 type DraftAppointment = {
@@ -28,8 +28,10 @@ type DraftAppointment = {
 };
 
 export default function BookAppointment() {
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  console.log('BookAppointment - Component rendering');
+  
+  const user = useUser();
+  const supabase = useSupabaseClient();
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,36 +42,27 @@ export default function BookAppointment() {
   // Add debugging statements
   console.log('BookAppointment - Document Cookie:', document.cookie);
   console.log('BookAppointment - User:', user);
-  console.log('BookAppointment - Loading:', loading);
+  console.log('BookAppointment - Supabase Client:', supabase);
 
   useEffect(() => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
-      setLoading(false)
-    })
-  }, [])
-
-  useEffect(() => {
+    console.log('BookAppointment - Pets effect running');
     const fetchPets = async () => {
       setPets([]);
       setSelectedPet(null);
       setError(null);
-      if (!user) return;
+      if (!user) {
+        console.log('BookAppointment - No user, skipping pets fetch');
+        return;
+      }
 
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-
+      console.log('BookAppointment - Fetching pets for user:', user.id);
       const { data: petData, error: petError } = await supabase
         .from('pets')
         .select('*')
         .eq('owner_id', user.id);
+      
+      console.log('BookAppointment - Pets fetch response:', { petData, petError });
+      
       if (petError) {
         setError('Failed to load your pets. Please try refreshing the page.');
       } else {
@@ -77,7 +70,7 @@ export default function BookAppointment() {
       }
     };
     fetchPets();
-  }, [user]);
+  }, [user, supabase]);
 
   useEffect(() => {
     if (selectedPet) {
@@ -113,11 +106,6 @@ export default function BookAppointment() {
     setIsCancelling(true);
     setError(null);
 
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
     const { error: deleteError } = await supabase
       .from('appointments')
       .delete()
@@ -129,14 +117,6 @@ export default function BookAppointment() {
     }
     router.replace('/portal/bookings');
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p>Loading...</p>
-      </div>
-    );
-  }
 
   if (!user) {
     router.replace('/login');

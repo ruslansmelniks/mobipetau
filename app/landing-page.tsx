@@ -156,7 +156,7 @@ export default function LandingPage() {
                     className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
                     asChild
                   >
-                    <Link href="/book">Book online now</Link>
+                    <Link href="/portal/bookings">Book online now</Link>
                   </Button>
                   <div className="flex items-center justify-center">
                     <span className="text-lg font-medium mr-2">+1 (555) 123-4567</span>
@@ -204,7 +204,7 @@ export default function LandingPage() {
                   className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
                   asChild
                 >
-                  <Link href="/book">Schedule a visit</Link>
+                  <Link href="/portal/bookings">Schedule a visit</Link>
                 </Button>
               </div>
             </div>
@@ -441,7 +441,7 @@ export default function LandingPage() {
                 className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
                 asChild
               >
-                <Link href="/book">Book service</Link>
+                <Link href="/portal/bookings">Book service</Link>
               </Button>
             </div>
           </section>
