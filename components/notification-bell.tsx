@@ -14,11 +14,107 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "@/components/ui/use-toast"
 
+interface Service {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
+interface AppointmentService {
+  id: string;
+  service_id: string;
+  price: number;
+  services: Service;
+}
+
+interface Pet {
+  id: string;
+  name: string;
+  type: string;
+  breed: string;
+}
+
+interface PetOwner {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+}
+
+interface AppointmentData {
+  id: string;
+  total_price: number;
+  address: string;
+  date: string;
+  time_slot: string;
+  status: string;
+  notes: string;
+  created_at: string;
+  pet_id: string;
+  pet_owner_id: string;
+  pets: Pet;
+  pet_owner: PetOwner;
+  services?: { name: string; price: number; }[];
+}
+
+interface Notification {
+  id: string;
+  created_at: string;
+  message: string;
+  appointment: AppointmentData | null;
+  type?: string;
+  reference_id?: string;
+  reference_type?: string;
+  read?: boolean;
+}
+
+interface DatabaseAppointment {
+  id: string;
+  total_price: number;
+  address: string;
+  date: string;
+  time_slot: string;
+  status: string;
+  notes: string;
+  created_at: string;
+  pet_id: string;
+  pet_owner_id: string;
+  pets: {
+    id: string;
+    name: string;
+    type: string;
+    breed: string;
+  };
+  pet_owner: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+  };
+}
+
+interface DatabaseService {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
+interface DatabaseAppointmentService {
+  id: string;
+  service_id: string;
+  price: number;
+  services: DatabaseService;
+}
+
 export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isEnabled, setIsEnabled] = useState(true)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
   const supabase = useSupabaseClient()
   const user = useUser()
@@ -98,86 +194,114 @@ export function NotificationBell() {
       
       console.log('🔍 Fetching notifications for user:', user.id);
       console.log('🔍 User role:', user.user_metadata?.role);
-      
-      // Fetch notifications
+
+      // First get notifications
       const { data: notificationsData, error: notificationsError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      
-      console.log('🔍 Notifications query result:', notificationsData);
-      console.log('🔍 Notifications query error:', notificationsError);
-      
-      if (!notificationsData || notificationsData.length === 0) {
-        console.log('🔍 No notifications found');
-        setNotifications([])
-        return
+        .eq('read', false)
+        .order('created_at', { ascending: false });
+
+      if (notificationsError) {
+        console.error('Error fetching notifications:', notificationsError);
+        return;
       }
-      
-      // Fetch appointment details for each notification
-      const appointmentIds = notificationsData
-        .filter(n => n.appointment_id)
-        .map(n => n.appointment_id)
-      
-      console.log('🔍 Appointment IDs to fetch:', appointmentIds);
-      
-      let appointmentsMap: Record<string, any> = {}
-      
-      if (appointmentIds.length > 0) {
-        // Enhanced query to get all necessary data
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
+
+      // Then get appointments that are waiting for vet response
+      const { data: appointmentsData, error: appointmentsError } = await supabase
+        .from('appointments')
+        .select(`
+          id, total_price, address, date, time_slot, status, notes, created_at, 
+          pet_id, pet_owner_id, pets:pet_id(*), pet_owner:pet_owner_id(*)
+        `)
+        .eq('vet_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (appointmentsError) {
+        console.error('Error fetching appointments:', appointmentsError);
+        return;
+      }
+
+      // Process appointments into notifications format
+      const appointmentNotifications = (appointmentsData || []).map(appointment => {
+        const typedAppointment = appointment as unknown as DatabaseAppointment;
+        return {
+          id: typedAppointment.id,
+          created_at: typedAppointment.created_at,
+          message: `New appointment request from ${typedAppointment.pet_owner.first_name || 'Unknown'} ${typedAppointment.pet_owner.last_name || ''} for ${typedAppointment.pets.name || 'Unknown Pet'}`,
+          type: 'appointment_request',
+          reference_id: typedAppointment.id,
+          reference_type: 'appointment',
+          read: false,
+          appointment: {
+            ...typedAppointment,
+            services: []
+          }
+        } as Notification;
+      });
+
+      // Combine both types of notifications
+      const allNotifications = [
+        ...appointmentNotifications,
+        ...(notificationsData || []).map(notification => ({
+          id: notification.id,
+          created_at: notification.created_at,
+          message: notification.message,
+          type: notification.type,
+          reference_id: notification.reference_id,
+          reference_type: notification.reference_type,
+          read: notification.read,
+          appointment: null
+        } as Notification))
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setNotifications(allNotifications);
+
+      // Fetch services for appointments
+      appointmentNotifications.forEach(async (notification) => {
+        if (!notification.appointment) return;
+        
+        const { data: servicesData } = await supabase
+          .from('appointment_services')
           .select(`
-            id, 
-            total_price, 
-            address, 
-            date, 
-            time_slot, 
-            status,
-            notes,
-            pets:pet_id (
+            id,
+            service_id,
+            price,
+            services (
               id,
               name,
-              type,
-              breed
-            ),
-            pet_owner:pet_owner_id (
-              id,
-              first_name,
-              last_name,
-              email,
-              phone
-            ),
-            services
+              description,
+              price
+            )
           `)
-          .in('id', appointmentIds)
-        
-        console.log('🔍 Appointments query result:', appointmentsData);
-        console.log('🔍 Appointments query error:', appointmentsError);
-        
-        if (appointmentsData) {
-          appointmentsMap = Object.fromEntries(
-            appointmentsData.map(a => [a.id, a])
-          )
+          .eq('appointment_id', notification.id);
+
+        if (servicesData && servicesData.length > 0) {
+          const typedServicesData = servicesData as unknown as DatabaseAppointmentService[];
+          const updatedAppointment = {
+            ...notification.appointment,
+            services: typedServicesData.map(service => ({
+              name: service.services.name,
+              price: service.price || service.services.price
+            }))
+          };
+
+          setNotifications(prev => 
+            prev.map(n => {
+              if (n.id === notification.id && n.appointment) {
+                return { ...n, appointment: updatedAppointment };
+              }
+              return n;
+            })
+          );
         }
-      }
-      
-      console.log('🔍 Final appointments map:', appointmentsMap);
-      
-      // Attach appointment details to notifications
-      const notificationsWithDetails = notificationsData.map(n => ({
-        ...n,
-        appointment: n.appointment_id ? appointmentsMap[n.appointment_id] : null
-      }))
-      
-      console.log('🔍 Final notifications with details:', notificationsWithDetails);
-      setNotifications(notificationsWithDetails)
-    }
+      });
+    };
     
-    fetchNotificationsWithDetails()
-  }, [dropdownOpen, user, supabase])
+    fetchNotificationsWithDetails();
+  }, [dropdownOpen, user, supabase]);
 
   const handleAcceptJob = async (appointmentId: string) => {
     setLoadingActions(prev => ({ ...prev, [appointmentId]: 'accept' }));
@@ -359,22 +483,38 @@ export function NotificationBell() {
               <div key={n.id} className="p-3 border-b last:border-b-0">
                 <div className="space-y-2">
                   <div className="font-semibold text-sm">
-                    {formatNotificationMessage(n)}
+                    {n.message}
                   </div>
                   
                   {n.appointment && (
                     <>
                       <div className="text-xs text-gray-600">
-                        {formatNotificationDetails(n)}
+                        {n.appointment.date ? new Date(n.appointment.date).toLocaleDateString('en-US', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : 'No date'} at {n.appointment.time_slot || 'No time'}
                       </div>
                       
-                      {n.appointment.total_price && (
-                        <div className="flex items-center gap-1 text-green-600 font-semibold text-sm">
-                          <DollarSign className="h-3 w-3" />
-                          <span>${n.appointment.total_price}</span>
+                      {/* Services and Pricing */}
+                      {n.appointment.services && n.appointment.services.length > 0 && (
+                        <div className="text-xs space-y-1">
+                          {n.appointment.services.map((service: any, index: number) => (
+                            <div key={index} className="flex justify-between text-gray-600">
+                              <span>{service.name}</span>
+                              <span>${service.price}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                       
+                      {/* Total Price */}
+                      <div className="flex items-center gap-1 text-green-600 font-semibold text-sm">
+                        <DollarSign className="h-3 w-3" />
+                        <span>${n.appointment.total_price}</span>
+                      </div>
+                      
+                      {/* Location */}
                       {n.appointment.address && (
                         <div className="flex items-start gap-1 text-gray-600 text-xs">
                           <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
@@ -383,37 +523,35 @@ export function NotificationBell() {
                       )}
                       
                       {/* Quick actions for vets */}
-                      {n.appointment && n.appointment.status === 'waiting_for_vet' && (
-                        <div className="flex gap-2 pt-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleAcceptJob(n.appointment_id)}
-                            disabled={loadingActions[n.appointment_id] === 'accept'}
-                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7"
-                          >
-                            {loadingActions[n.appointment_id] === 'accept' ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Check className="h-3 w-3" />
-                            )}
-                            Accept
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDeclineJob(n.appointment_id)}
-                            disabled={loadingActions[n.appointment_id] === 'decline'}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs px-2 py-1 h-7"
-                          >
-                            {loadingActions[n.appointment_id] === 'decline' ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <X className="h-3 w-3" />
-                            )}
-                            Decline
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleAcceptJob(n.appointment.id)}
+                          disabled={loadingActions[n.appointment.id] === 'accept'}
+                          className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7"
+                        >
+                          {loadingActions[n.appointment.id] === 'accept' ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeclineJob(n.appointment.id)}
+                          disabled={loadingActions[n.appointment.id] === 'decline'}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs px-2 py-1 h-7"
+                        >
+                          {loadingActions[n.appointment.id] === 'decline' ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <X className="h-3 w-3" />
+                          )}
+                          Decline
+                        </Button>
+                      </div>
                     </>
                   )}
                   
