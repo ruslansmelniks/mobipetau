@@ -36,19 +36,54 @@ export default function LoginPage() {
   }, [router, isRedirecting, supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-    setIsLoading(true)
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    if (error) {
-      setError(error.message)
-      setIsLoading(false)
-    } else {
-      setIsRedirecting(true)
-      window.location.href = '/portal/bookings'
+    e.preventDefault();
+    setError("");
+
+    if (!email || !password) {
+      setError("Please enter both email and password");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const supabase = createClientComponentClient();
+      // Sign in with Supabase
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message || "Invalid email or password.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!data?.user) {
+        setError("Login failed. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Get user role
+      const userRole = data.user.user_metadata?.role || 'pet_owner';
+      const redirectPath = userRole === 'admin' ? '/admin' : 
+                          userRole === 'vet' ? '/vet' : 
+                          '/portal/bookings';
+
+      // After successful login, verify session is accessible
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        await supabase.auth.refreshSession();
+      }
+
+      // Use router.refresh() to ensure the middleware sees the new session
+      router.refresh();
+      // Then push to the new route
+      router.push(redirectPath);
+    } catch (err: any) {
+      setError("An unexpected error occurred. Please try again.");
+      setIsLoading(false);
     }
   }
 
