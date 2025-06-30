@@ -21,38 +21,80 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     console.log('[PortalLayout] useEffect triggered', { session, loading });
-    if (session !== undefined) {
-      if (session && session.user) {
-        console.log('[PortalLayout] Session and user found', session.user);
-        const currentUser = session.user as User;
-        const userData: UserData = {
-          ...currentUser,
-          user_metadata: currentUser.user_metadata as UserProfile || {},
-        };
-        setUser(userData);
-        if (userData.user_metadata?.first_name) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: userData.user_metadata.first_name } } : null);
-        } else if (currentUser.email) {
-          setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: currentUser.email!.split('@')[0] || 'User' } } : null );
+    
+    // Don't redirect while still loading
+    if (loading && session === undefined) {
+      console.log('[PortalLayout] Still loading, waiting for session...');
+      return;
+    }
+    
+    // Only redirect if we're sure there's no session
+    if (!loading && !session && !user) {
+      console.log('[PortalLayout] No session after loading, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    if (session && session.user) {
+      console.log('[PortalLayout] Session and user found', session.user);
+      const currentUser = session.user as User;
+      const userData: UserData = {
+        ...currentUser,
+        user_metadata: currentUser.user_metadata as UserProfile || {},
+      };
+      setUser(userData);
+      if (userData.user_metadata?.first_name) {
+        setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: userData.user_metadata.first_name } } : null);
+      } else if (currentUser.email) {
+        setUser(prev => prev ? { ...prev, user_metadata: {...prev.user_metadata, firstName: currentUser.email!.split('@')[0] || 'User' } } : null );
+      }
+      setLoading(false);
+    } else if (session === null) {
+      console.log('[PortalLayout] Session is null, redirecting to login');
+      setUser(null);
+      setLoading(false);
+      router.push('/login');
+    }
+  }, [session, loading, user, router]);
+
+  // Initialize session loading
+  useEffect(() => {
+    const initializeSession = async () => {
+      try {
+        console.log('[PortalLayout] Initializing session...');
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[PortalLayout] Error getting initial session:', error);
+          setLoading(false);
+          router.push('/login');
+          return;
         }
-        setLoading(false);
-      } else {
-        console.log('[PortalLayout] No session or user, redirecting to login', { session });
-        setUser(null);
+        
+        if (initialSession) {
+          console.log('[PortalLayout] Initial session found:', initialSession.user.email);
+          setLoading(false);
+        } else {
+          console.log('[PortalLayout] No initial session found');
+          setLoading(false);
+          router.push('/login');
+        }
+      } catch (error) {
+        console.error('[PortalLayout] Error in session initialization:', error);
         setLoading(false);
         router.push('/login');
       }
-    } else {
-      console.log('[PortalLayout] Session is undefined, waiting...');
-    }
-  }, [session, router]);
+    };
+
+    initializeSession();
+  }, [supabase, router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     // The onAuthStateChange listener in the global provider should handle the redirect to /login
   };
 
-  if (session === undefined || loading) {
+  if (loading || session === undefined) {
     console.log('[PortalLayout] Waiting for session or loading:', { session, loading });
     return (
       <div className="min-h-screen flex items-center justify-center">

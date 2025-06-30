@@ -14,14 +14,14 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async getAll() {
-          const cookiesList = await request.cookies.getAll()
-          return cookiesList.map(({ name, value }) => ({ name, value }))
+        get(name: string) {
+          return request.cookies.get(name)?.value
         },
-        async setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
-          })
+        set(name: string, value: string, options: CookieOptions) {
+          response.cookies.set(name, value, options)
+        },
+        remove(name: string, options: CookieOptions) {
+          response.cookies.set(name, '', { ...options, maxAge: 0 })
         },
       },
     }
@@ -29,15 +29,47 @@ export async function middleware(request: NextRequest) {
 
   // Add debug logging for session check
   console.log('[Middleware] Checking session for path:', request.nextUrl.pathname)
-  const { data: { session }, error } = await supabase.auth.getSession()
-  // Add manual cookie check as fallback
+  
+  // Get auth cookie for debugging
   const authToken = request.cookies.get('sb-vhpcosbihfooclhoemoz-auth-token')
   const hasAuthCookie = !!authToken?.value
-  const hasSession = session || hasAuthCookie
+  
+  // Debug cookie parsing
+  if (authToken?.value) {
+    try {
+      const [accessToken, refreshToken] = JSON.parse(authToken.value)
+      console.log('[Middleware] Parsed tokens:', { 
+        hasAccess: !!accessToken, 
+        hasRefresh: !!refreshToken,
+        accessTokenLength: accessToken?.length || 0
+      })
+    } catch (e) {
+      console.error('[Middleware] Failed to parse auth token:', e)
+    }
+  }
+
+  // Get session properly
+  let { data: { session }, error } = await supabase.auth.getSession()
+  
+  // If no session but we have auth cookie, try to refresh
+  if (!session && hasAuthCookie && !error) {
+    console.log('[Middleware] No session but auth cookie exists, attempting refresh')
+    const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+    
+    if (refreshedSession) {
+      console.log('[Middleware] Session refreshed successfully')
+      session = refreshedSession
+    } else {
+      console.log('[Middleware] Session refresh failed:', refreshError)
+    }
+  }
+
+  const hasSession = !!session && !error
+  
   console.log('[Middleware] Session check result:', {
-    hasSession: !!session,
+    hasSession,
     hasAuthCookie,
-    error,
+    error: error?.message,
     sessionUser: session?.user?.email,
     cookies: request.cookies.getAll().map(c => ({ name: c.name, value: c.value.substring(0, 20) + '...' }))
   })
