@@ -20,35 +20,23 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [isRedirecting, setIsRedirecting] = useState(false)
   const supabase = createClientComponentClient()
 
   useEffect(() => {
-    // Fetch session on mount
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      console.log('[LoginPage] getSession result:', data.session)
-    })
-    // Subscribe to session changes
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      console.log('[LoginPage] onAuthStateChange:', session)
-    })
-    return () => {
-      listener?.subscription.unsubscribe()
+    // Check if already logged in on mount
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && !isRedirecting) {
+        setIsRedirecting(true)
+        router.push('/portal/bookings')
+      }
     }
-  }, [supabase])
-
-  useEffect(() => {
-    if (session) {
-      router.replace("/portal/bookings")
-    }
-  }, [session, router])
-
-  console.log('[LoginPage] Rendered. Session:', session)
+    checkSession()
+  }, [router, isRedirecting, supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('[LoginPage] Login attempt started', { email, password: password ? 'provided' : 'missing' })
     setError("")
     setIsLoading(true)
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -56,11 +44,10 @@ export default function LoginPage() {
       password,
     })
     if (error) {
-      console.error('Login error:', error)
       setError(error.message)
       setIsLoading(false)
     } else {
-      console.log('[LoginPage] Login successful, redirecting...')
+      setIsRedirecting(true)
       window.location.href = '/portal/bookings'
     }
   }
