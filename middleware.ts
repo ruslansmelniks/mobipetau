@@ -108,16 +108,11 @@ export async function middleware(request: NextRequest) {
   // If authenticated user tries to access login/signup, redirect to appropriate dashboard
   if (user && (pathname === '/login' || pathname === '/signup')) {
     const userRole = user.user_metadata?.role || 'pet_owner'
-    let redirectTo = '/portal/bookings' // default for pet owners
-    
-    if (userRole === 'admin') {
-      redirectTo = '/admin'
-    } else if (userRole === 'vet') {
-      redirectTo = '/vet'
-    }
-    
-    console.log('[Middleware] Authenticated user on auth page, redirecting to:', redirectTo)
-    return NextResponse.redirect(new URL(redirectTo, request.url))
+    const redirectPath = userRole === 'admin' ? '/admin' : 
+                        userRole === 'vet' ? '/vet' : 
+                        '/portal/bookings';
+    console.log('[Middleware] Authenticated user on auth page, redirecting to:', redirectPath)
+    return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
   return response

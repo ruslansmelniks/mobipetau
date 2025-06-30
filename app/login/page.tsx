@@ -71,16 +71,8 @@ export default function LoginPage() {
                           userRole === 'vet' ? '/vet' : 
                           '/portal/bookings';
 
-      // After successful login, verify session is accessible
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        await supabase.auth.refreshSession();
-      }
-
-      // Use router.refresh() to ensure the middleware sees the new session
-      router.refresh();
-      // Then push to the new route
-      router.push(redirectPath);
+      // CRITICAL: Force a hard navigation to ensure cookies are properly set
+      window.location.replace(redirectPath);
     } catch (err: any) {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);

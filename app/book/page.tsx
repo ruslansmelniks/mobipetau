@@ -41,7 +41,6 @@ export default function BookAppointment() {
   const debug = true;
 
   // Add debugging statements
-  console.log('BookAppointment - Document Cookie:', document.cookie);
   console.log('BookAppointment - User:', user);
   console.log('BookAppointment - Supabase Client:', supabase);
 
@@ -78,6 +77,12 @@ export default function BookAppointment() {
       setError(null);
     }
   }, [selectedPet]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      console.log('BookAppointment - Document Cookie:', document.cookie);
+    }
+  }, []);
 
   const handlePetSelect = async (petId: string) => {
     setSelectedPet(petId);
