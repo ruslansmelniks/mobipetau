@@ -119,8 +119,8 @@ export function NotificationBell() {
   const supabase = useSupabaseClient()
   const user = useUser()
 
-  // Debug logging
-  console.log('Enhanced NotificationBell component loaded')
+  // Remove debug logging to prevent re-renders
+  // console.log('Enhanced NotificationBell component loaded')
 
   useEffect(() => {
     if (!user || !isEnabled) return
