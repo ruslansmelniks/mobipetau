@@ -51,9 +51,38 @@ export async function middleware(request: NextRequest) {
   // Get session properly
   let { data: { session }, error } = await supabase.auth.getSession()
   
-  // If no session but we have auth cookie, try to refresh
+  // If no session but we have auth cookie, try to set session from cookie
   if (!session && hasAuthCookie && !error) {
-    console.log('[Middleware] No session but auth cookie exists, attempting refresh')
+    console.log('[Middleware] No session but auth cookie exists, attempting to set session from cookie')
+    
+    try {
+      const [accessToken, refreshToken] = JSON.parse(authToken!.value)
+      
+      if (accessToken && refreshToken) {
+        const { data, error: setSessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        })
+        
+        if (setSessionError) {
+          console.error('[Middleware] Failed to set session from cookie:', setSessionError)
+          // Clear invalid cookies
+          response.cookies.delete('sb-vhpcosbihfooclhoemoz-auth-token')
+        } else if (data.session) {
+          console.log('[Middleware] Session set successfully from cookie')
+          session = data.session
+        }
+      }
+    } catch (parseError) {
+      console.error('[Middleware] Failed to parse auth token for session setting:', parseError)
+      // Clear invalid cookies
+      response.cookies.delete('sb-vhpcosbihfooclhoemoz-auth-token')
+    }
+  }
+  
+  // If still no session, try refresh
+  if (!session && hasAuthCookie && !error) {
+    console.log('[Middleware] Still no session, attempting refresh')
     const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
     
     if (refreshedSession) {
@@ -61,6 +90,10 @@ export async function middleware(request: NextRequest) {
       session = refreshedSession
     } else {
       console.log('[Middleware] Session refresh failed:', refreshError)
+      // Clear invalid cookies if refresh fails
+      if (refreshError) {
+        response.cookies.delete('sb-vhpcosbihfooclhoemoz-auth-token')
+      }
     }
   }
 

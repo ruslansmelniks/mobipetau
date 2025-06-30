@@ -21,22 +21,51 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
 
     async function checkAuth() {
       try {
+        console.log('[PortalLayout] Starting auth check...')
         const supabase = createClient()
+        
+        // First try to get session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        console.log('[PortalLayout] Session check:', { hasSession: !!session, error: sessionError?.message })
+        
+        if (session) {
+          console.log('[PortalLayout] Session found, user:', session.user.email)
+          if (!mounted) return;
+          setUser(session.user)
+          
+          // Get user profile with role
+          const { data: profile } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', session.user.id)
+            .single()
+
+          if (!mounted) return;
+          setUserRole(profile?.role || 'pet_owner')
+          setIsLoading(false)
+          return
+        }
+        
+        // If no session, try to get user directly
         const { data: { user }, error: authError } = await supabase.auth.getUser()
+        console.log('[PortalLayout] Direct user check:', { hasUser: !!user, error: authError?.message })
         
         if (!mounted) return;
 
         if (authError) {
-          console.error('Auth error:', authError)
+          console.error('[PortalLayout] Auth error:', authError)
           setError(authError.message)
           router.push('/login')
           return
         }
 
         if (!user) {
+          console.log('[PortalLayout] No user found, redirecting to login')
           router.push('/login')
           return
         }
+
+        console.log('[PortalLayout] User found:', user.email)
 
         // Get user profile with role
         const { data: profile } = await supabase
@@ -51,7 +80,7 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
         setUserRole(profile?.role || 'pet_owner')
       } catch (err) {
         if (!mounted) return;
-        console.error('Error checking auth:', err)
+        console.error('[PortalLayout] Error checking auth:', err)
         setError('Failed to check authentication')
         router.push('/login')
       } finally {

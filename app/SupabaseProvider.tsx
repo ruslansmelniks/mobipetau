@@ -27,6 +27,34 @@ export default function SupabaseProvider({ children }: { children: React.ReactNo
     return () => subscription.unsubscribe();
   }, [supabaseClient]);
 
+  // Add session validation
+  useEffect(() => {
+    const validateSession = async () => {
+      try {
+        console.log('[SupabaseProvider] Validating session...');
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        
+        if (error) {
+          console.error('[SupabaseProvider] Session validation error:', error);
+        } else if (!session) {
+          console.log('[SupabaseProvider] No session found, attempting refresh...');
+          // Try to recover session from URL
+          const { data, error: refreshError } = await supabaseClient.auth.refreshSession();
+          if (refreshError) {
+            console.error('[SupabaseProvider] Session refresh failed:', refreshError);
+          } else if (data.session) {
+            console.log('[SupabaseProvider] Session refreshed successfully');
+            setSession(data.session);
+          }
+        }
+      } catch (error) {
+        console.error('[SupabaseProvider] Session validation failed:', error);
+      }
+    };
+
+    validateSession();
+  }, [supabaseClient]);
+
   return (
     <SessionContextProvider supabaseClient={supabaseClient} initialSession={session}>
       {children}
