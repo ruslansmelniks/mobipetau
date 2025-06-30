@@ -127,35 +127,22 @@ export function NotificationBell() {
 
     const checkNotifications = async () => {
       try {
-        // Try with is_read first
-        let { count, error } = await supabase
+        // Query unread notifications using the 'read' column
+        const { count, error } = await supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('is_read', false)
-
-        // If error, try with 'read' column
-        if (error && error.message.includes('column')) {
-          console.log('Trying alternative column name...');
-          const result = await supabase
-            .from('notifications')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('read', false)
-          
-          count = result.count
-          error = result.error
-        }
+          .eq('read', false)
 
         if (error) {
-          console.log('Notifications not available:', error.message)
+          console.error('Error checking notifications:', error.message)
           setIsEnabled(false)
           return
         }
 
         setUnreadCount(count || 0)
       } catch (err) {
-        console.log('Error checking notifications:', err)
+        console.error('Error checking notifications:', err)
         setIsEnabled(false)
       }
     }
@@ -526,11 +513,11 @@ export function NotificationBell() {
                       <div className="flex gap-2 pt-2">
                         <Button
                           size="sm"
-                          onClick={() => handleAcceptJob(n.appointment.id)}
-                          disabled={loadingActions[n.appointment.id] === 'accept'}
+                          onClick={() => handleAcceptJob(n.appointment!.id)}
+                          disabled={loadingActions[n.appointment!.id] === 'accept'}
                           className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7"
                         >
-                          {loadingActions[n.appointment.id] === 'accept' ? (
+                          {loadingActions[n.appointment!.id] === 'accept' ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <Check className="h-3 w-3" />
@@ -540,11 +527,11 @@ export function NotificationBell() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeclineJob(n.appointment.id)}
-                          disabled={loadingActions[n.appointment.id] === 'decline'}
+                          onClick={() => handleDeclineJob(n.appointment!.id)}
+                          disabled={loadingActions[n.appointment!.id] === 'decline'}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs px-2 py-1 h-7"
                         >
-                          {loadingActions[n.appointment.id] === 'decline' ? (
+                          {loadingActions[n.appointment!.id] === 'decline' ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <X className="h-3 w-3" />
