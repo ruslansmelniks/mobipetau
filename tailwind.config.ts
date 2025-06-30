@@ -38,7 +38,8 @@ const config = {
           900: "#00231d",
         },
         primary: {
-          DEFAULT: "hsl(var(--primary))",
+          DEFAULT: "#4e968f",
+          dark: "#43847e",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {

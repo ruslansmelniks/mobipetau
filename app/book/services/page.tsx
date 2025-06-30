@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { SmartLogo } from "@/components/smart-logo"
 
 // Define types consistent with app/book/page.tsx
 type DraftAppointment = {
@@ -131,9 +132,9 @@ export default function SelectServices() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
-          <Link href="/" className="flex justify-center md:justify-start">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
-          </Link>
+          <div className="flex items-center">
+            <SmartLogo />
+          </div>
         </div>
       </header>
 

@@ -9,6 +9,7 @@ import { CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ProviderWaitlistDialog } from "@/components/provider-waitlist-dialog"
+import { SmartLogo } from "@/components/smart-logo"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
@@ -46,9 +47,7 @@ export default function ForgotPasswordPage() {
       {/* Header */}
       <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
         <div className="flex items-center">
-          <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
-          </Link>
+          <SmartLogo />
         </div>
         <nav className="hidden md:flex items-center space-x-8">
           <Link href="#services" className="text-sm font-medium text-gray-700 hover:text-teal-600">

@@ -137,14 +137,14 @@ export function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) 
         <div className="flex justify-center mt-4 gap-2">
           <button
             onClick={prevSlide}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-teal-600 transition-all"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-primary transition-all"
             aria-label="Previous testimonial"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
           <button
             onClick={nextSlide}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-teal-600 transition-all"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-primary transition-all"
             aria-label="Next testimonial"
           >
             <ChevronRight className="h-5 w-5" />
@@ -198,7 +198,7 @@ export function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) 
 
       <button
         onClick={prevSlide}
-        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-teal-600 transition-all"
+        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-primary transition-all"
         aria-label="Previous testimonial"
       >
         <ChevronLeft className="h-5 w-5" />
@@ -206,7 +206,7 @@ export function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) 
 
       <button
         onClick={nextSlide}
-        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-teal-600 transition-all"
+        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-md text-gray-600 hover:text-primary transition-all"
         aria-label="Next testimonial"
       >
         <ChevronRight className="h-5 w-5" />

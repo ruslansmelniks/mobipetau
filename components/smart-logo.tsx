@@ -10,11 +10,6 @@ export function SmartLogo({ className }: { className?: string }) {
   // Determine the correct home URL based on authentication status
   const getHomeUrl = () => {
     if (!user) return '/';
-    // Check if user has a specific role
-    const role = user?.user_metadata?.role;
-    if (role === 'vet') {
-      return '/vet';
-    }
     return '/portal/bookings';
   };
 

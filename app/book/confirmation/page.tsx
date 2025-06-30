@@ -9,6 +9,7 @@ import { BookingSteps } from "@/components/booking-steps"
 import { useUser } from "@supabase/auth-helpers-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useAppointments } from "@/hooks/useAppointments"
+import { SmartLogo } from "@/components/smart-logo"
 
 interface ConfirmationData {
   appointmentId: string;
@@ -123,9 +124,9 @@ export default function ConfirmationPage() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <header className="bg-white border-b">
           <div className="container mx-auto max-w-[1400px] py-4 px-4">
-            <Link href="/" className="flex justify-center md:justify-start">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
-            </Link>
+            <div className="flex items-center">
+              <SmartLogo />
+            </div>
           </div>
         </header>
         <main className="flex-1 container mx-auto max-w-[1400px] px-4 py-8 flex items-center justify-center">

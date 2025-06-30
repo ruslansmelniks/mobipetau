@@ -67,7 +67,7 @@ export function MobileMenu({ links, onOpenWaitlistDialog }: MobileMenuProps) {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className="block py-2 text-gray-700 hover:text-teal-600 font-medium"
+                  className="block py-2 text-gray-700 hover:text-primary font-medium"
                   onClick={closeMenu}
                 >
                   {link.label}
@@ -76,7 +76,7 @@ export function MobileMenu({ links, onOpenWaitlistDialog }: MobileMenuProps) {
             ))}
             <li className="pt-4 border-t">
               <button
-                className="block py-2 text-gray-700 hover:text-teal-600 font-medium text-left w-full"
+                className="block py-2 text-gray-700 hover:text-primary font-medium text-left w-full"
                 onClick={() => {
                   closeMenu()
                   onOpenWaitlistDialog()

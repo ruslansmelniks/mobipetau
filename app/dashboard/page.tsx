@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { Clock, Calendar, MapPin, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SmartLogo } from "@/components/smart-logo"
 
 // Mock appointment data - in a real app, this would come from your backend
 const appointment = {
@@ -71,7 +72,7 @@ export default function Dashboard() {
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex justify-between items-center">
             <Link href="/" className="flex items-center">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" style={{ height: 'auto' }} />
+              <SmartLogo />
             </Link>
             <nav className="hidden md:flex items-center space-x-6">
               <Link href="/dashboard" className="text-sm font-medium text-teal-600">

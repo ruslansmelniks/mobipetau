@@ -21,6 +21,7 @@ import { useAppointmentBooking } from '@/hooks/useAppointmentBooking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SmartLogo } from "@/components/smart-logo"
 
 // Time slot options based on time of day
 const timeSlots = [
@@ -212,15 +213,9 @@ export default function AppointmentDetails() {
     <div id="appointment-container" className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
-          <Link href="/" className="flex justify-center md:justify-start">
-            <Image 
-              src="/logo.png" 
-              alt="MobiPet Logo" 
-              width={96} 
-              height={32} 
-              className="h-[32px] w-auto"
-            />
-          </Link>
+          <div className="flex items-center">
+            <SmartLogo />
+          </div>
         </div>
       </header>
 

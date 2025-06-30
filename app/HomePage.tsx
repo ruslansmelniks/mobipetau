@@ -9,7 +9,7 @@ export default function HomePage() {
         <p className="text-lg text-gray-600 mb-8 text-center max-w-2xl">
           Our expert mobile vet providers offer after-hours and weekend vet care in the comfort of your home.
         </p>
-        <button className="bg-teal-600 text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-teal-700 transition">Book online now</button>
+        <button className="bg-primary text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-primary/90 transition">Book online now</button>
       </section>
 
       {/* Services Section */}

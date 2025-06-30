@@ -2,6 +2,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { SmartLogo } from "@/components/smart-logo"
 
 export default function ServicesPage() {
   return (
@@ -10,7 +11,7 @@ export default function ServicesPage() {
       <header className="bg-white border-b">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet" width={96} height={32} className="h-8 w-auto" style={{ height: 'auto' }} />
+            <SmartLogo />
           </Link>
           <nav className="hidden md:flex items-center gap-8">
             <Link href="/services" className="text-base font-medium text-gray-900">
@@ -475,7 +476,7 @@ export default function ServicesPage() {
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-center md:justify-between items-center">
             <Link href="/" className="flex items-center">
-              <Image src="/logo.png" alt="MobiPet" width={96} height={32} className="h-8 w-auto" style={{ height: 'auto' }} />
+              <SmartLogo />
             </Link>
             <p className="text-sm text-gray-500 hidden md:block">© 2024 MobiPet. All rights reserved.</p>
           </div>

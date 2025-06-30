@@ -41,7 +41,7 @@ export function VetProfileModal({ vet, isOpen, onClose }: VetProfileModalProps) 
         <div className="space-y-6">
           <div className="flex items-start gap-4">
             <div className="w-20 h-20 rounded-full bg-teal-100 flex items-center justify-center">
-              <span className="text-2xl font-bold text-teal-600">
+              <span className="text-2xl font-bold text-primary">
                 {vet.first_name?.[0]}{vet.last_name?.[0]}
               </span>
             </div>

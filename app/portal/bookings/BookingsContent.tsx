@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/supabase'
+import { Calendar } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -102,16 +105,23 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   if (appointments.length === 0) {
     return (
-      <div className="text-center p-8 bg-gray-50 rounded-lg">
-        <p className="text-gray-600 mb-4">No appointments found.</p>
-        {userRole === 'pet_owner' && (
-          <button 
-            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition"
-            onClick={() => window.location.href = '/portal/vets'}
-          >
-            Find a Vet
-          </button>
-        )}
+      <div className="flex flex-col items-center justify-center py-16">
+        <div className="mb-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full">
+            <Calendar className="w-10 h-10 text-primary" />
+          </div>
+        </div>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          No appointments yet
+        </h3>
+        <p className="text-gray-600 mb-6 text-center max-w-sm">
+          Book an appointment with a mobile vet who comes to your home
+        </p>
+        <Link href="/book">
+          <Button className="bg-primary hover:bg-primary/90 text-white">
+            Book appointment
+          </Button>
+        </Link>
       </div>
     )
   }

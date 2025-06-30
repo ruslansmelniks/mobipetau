@@ -48,11 +48,11 @@ export function VetPortalTabs() {
               href={tab.href}
               className={cn(
                 "px-4 py-4 text-sm font-medium transition-colors relative",
-                isActive(tab.href) ? "text-teal-600" : "text-gray-600 hover:text-teal-600",
+                isActive(tab.href) ? "text-primary" : "text-gray-600 hover:text-primary",
               )}
             >
               {tab.name}
-              {isActive(tab.href) && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600" />}
+              {isActive(tab.href) && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
             </Link>
           ))}
         </div>

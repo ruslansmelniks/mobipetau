@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
@@ -9,20 +9,46 @@ import { Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { logger } from "@/lib/logger"
+import { SmartLogo } from "@/components/smart-logo"
+import type { AuthSession } from '@supabase/supabase-js'
 
 export default function LoginPage() {
-  console.log('Login page rendered')
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const router = useRouter()
   const supabase = createClientComponentClient()
+
+  useEffect(() => {
+    // Fetch session on mount
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      console.log('[LoginPage] getSession result:', data.session)
+    })
+    // Subscribe to session changes
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      console.log('[LoginPage] onAuthStateChange:', session)
+    })
+    return () => {
+      listener?.subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (session) {
+      router.replace("/portal/bookings")
+    }
+  }, [session, router])
+
+  console.log('[LoginPage] Rendered. Session:', session)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('Login attempt started', { email, password: password ? 'provided' : 'missing' })
+    console.log('[LoginPage] Login attempt started', { email, password: password ? 'provided' : 'missing' })
     setError("")
     setIsLoading(true)
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -34,7 +60,7 @@ export default function LoginPage() {
       setError(error.message)
       setIsLoading(false)
     } else {
-      console.log('Login successful, redirecting...')
+      console.log('[LoginPage] Login successful, redirecting...')
       window.location.href = '/portal/bookings'
     }
   }
@@ -44,9 +70,7 @@ export default function LoginPage() {
       {/* Header */}
       <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
         <div className="flex items-center">
-          <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
-          </Link>
+          <SmartLogo />
         </div>
         <nav className="hidden md:flex items-center space-x-8">
           <Link href="/services" className="text-sm font-medium text-gray-700 hover:text-teal-600">

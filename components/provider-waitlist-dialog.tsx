@@ -117,7 +117,7 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
                 Thank you for your interest in joining MobiPet. We'll review your application and get back to you soon.
               </p>
             </div>
-            <Button onClick={resetDialog} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={resetDialog} className="bg-primary hover:bg-primary/90">
               Close
             </Button>
           </div>
@@ -271,7 +271,7 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-teal-600 hover:bg-teal-700"
+              className="bg-primary hover:bg-primary/90"
             >
               {isSubmitting ? 'Submitting...' : 'Join Waitlist'}
             </Button>

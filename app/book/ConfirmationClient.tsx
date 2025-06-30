@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { User } from "@supabase/supabase-js"
 import { useRouter, useSearchParams } from "next/navigation"
+import { SmartLogo } from "@/components/smart-logo"
 
 interface ConfirmationClientProps {
   user: User | null;
@@ -95,7 +96,7 @@ export default function ConfirmationClient({ user, sessionId }: ConfirmationClie
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-center px-4">
-        <Loader2 className="h-12 w-12 animate-spin text-teal-600 mb-4" />
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
         <p className="text-gray-700 text-lg">Verifying your payment and confirming booking...</p>
         <p className="text-gray-500 text-sm">Please do not close or refresh this page.</p>
       </div>
@@ -127,15 +128,15 @@ export default function ConfirmationClient({ user, sessionId }: ConfirmationClie
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <header className="bg-white border-b">
           <div className="container mx-auto max-w-[1400px] py-4 px-4">
-            <Link href="/" className="flex justify-center md:justify-start">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
-            </Link>
+            <div className="flex items-center">
+              <SmartLogo />
+            </div>
           </div>
         </header>
         <main className="flex-1 container mx-auto max-w-[1400px] px-4 py-8 flex items-center justify-center">
           <div className="max-w-2xl w-full">
             <div className="bg-white p-8 sm:p-12 rounded-lg border shadow-xl text-center">
-              <CheckCircle className="h-16 w-16 text-teal-600 mx-auto mb-6" />
+              <CheckCircle className="h-16 w-16 text-primary mx-auto mb-6" />
               <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Booking Confirmed!</h1>
               <p className="text-gray-600 text-lg mb-3">
                 {confirmationData.message}
@@ -160,7 +161,7 @@ export default function ConfirmationClient({ user, sessionId }: ConfirmationClie
 
               <div className="mt-10 flex flex-col sm:flex-row justify-center gap-3">
                 <Button
-                  className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 text-lg rounded-md w-full sm:w-auto"
+                  className="bg-primary hover:bg-primary/90 text-white px-8 py-3 text-lg rounded-md w-full sm:w-auto"
                   asChild
                 >
                   <Link href="/portal/bookings">View My Bookings</Link>
