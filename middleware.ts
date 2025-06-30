@@ -27,6 +27,23 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // --- Temporary cleanup for malformed cookies ---
+  const cookiesToClean = [
+    'sb-vhpcosbihfooclhoemoz-auth-token',
+    'sb-vhpcosbihfooclhoemoz-auth-token.0',
+    'sb-vhpcosbihfooclhoemoz-auth-token.1'
+  ];
+  cookiesToClean.forEach(cookieName => {
+    if (request.cookies.has(cookieName)) {
+      const value = request.cookies.get(cookieName)?.value;
+      if (value?.startsWith('base64-')) {
+        console.log(`[Middleware] Cleaning malformed cookie: ${cookieName}`);
+        response.cookies.delete(cookieName);
+      }
+    }
+  });
+  // --- End temporary cleanup ---
+
   // Add debug logging for session check
   console.log('[Middleware] Checking session for path:', request.nextUrl.pathname)
   
@@ -48,6 +65,31 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // --- Helper: Robustly parse Supabase auth cookie ---
+  function getTokensFromCookie(cookieValue: string | undefined): [string, string] | null {
+    if (!cookieValue) return null;
+    let tokenData = cookieValue;
+    // Remove base64- prefix if present
+    if (tokenData.startsWith('base64-')) {
+      tokenData = tokenData.substring(7);
+    }
+    try {
+      // Try JSON parse first
+      if (tokenData.startsWith('[')) {
+        const parsed = JSON.parse(tokenData);
+        if (Array.isArray(parsed) && parsed.length === 2) return [parsed[0], parsed[1]];
+      }
+      // Try base64 decode and then JSON parse
+      const decoded = Buffer.from(tokenData, 'base64').toString('utf-8');
+      const parsed = JSON.parse(decoded);
+      if (Array.isArray(parsed) && parsed.length === 2) return [parsed[0], parsed[1]];
+    } catch (e) {
+      // If all fails, return null
+      console.error('[Middleware] Failed to robustly parse auth cookie:', e);
+    }
+    return null;
+  }
+
   // --- Robust session handling ---
   let session = null;
   let error = null;
@@ -56,8 +98,9 @@ export async function middleware(request: NextRequest) {
 
   // Parse the cookie and try to set the session from it
   if (authToken?.value) {
-    try {
-      [accessToken, refreshToken] = JSON.parse(authToken.value);
+    const tokens = getTokensFromCookie(authToken.value);
+    if (tokens) {
+      [accessToken, refreshToken] = tokens;
       if (accessToken && refreshToken) {
         const { data, error: setSessionError } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -70,8 +113,8 @@ export async function middleware(request: NextRequest) {
         }
         session = data.session;
       }
-    } catch (e) {
-      console.error('[Middleware] Malformed auth cookie, clearing:', e);
+    } else {
+      console.error('[Middleware] Malformed auth cookie, clearing.');
       response.cookies.delete('sb-vhpcosbihfooclhoemoz-auth-token');
       return NextResponse.redirect(new URL('/login', request.url));
     }
