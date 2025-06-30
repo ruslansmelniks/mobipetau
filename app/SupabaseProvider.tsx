@@ -36,19 +36,28 @@ export default function SupabaseProvider({ children }: { children: React.ReactNo
         
         if (error) {
           console.error('[SupabaseProvider] Session validation error:', error);
-        } else if (!session) {
-          console.log('[SupabaseProvider] No session found, attempting refresh...');
-          // Try to recover session from URL
-          const { data, error: refreshError } = await supabaseClient.auth.refreshSession();
-          if (refreshError) {
-            console.error('[SupabaseProvider] Session refresh failed:', refreshError);
-          } else if (data.session) {
-            console.log('[SupabaseProvider] Session refreshed successfully');
-            setSession(data.session);
+        }
+
+        if (!session) {
+          // Only attempt refresh if a Supabase auth cookie exists
+          const hasAuthCookie = typeof document !== 'undefined' && document.cookie.includes('sb-');
+          if (hasAuthCookie) {
+            console.log('[SupabaseProvider] No session found, attempting refresh...');
+            const { data, error: refreshError } = await supabaseClient.auth.refreshSession();
+            if (refreshError) {
+              console.error('[SupabaseProvider] Session refresh failed:', refreshError);
+            } else if (data.session) {
+              console.log('[SupabaseProvider] Session refreshed successfully');
+              setSession(data.session);
+            }
+          } else {
+            // No session and no cookie, just set loading to false
+            setLoading(false);
           }
         }
       } catch (error) {
         console.error('[SupabaseProvider] Session validation failed:', error);
+        setLoading(false);
       }
     };
 
