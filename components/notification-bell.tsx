@@ -116,45 +116,11 @@ export function NotificationBell() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
   const supabase = useSupabaseClient()
+  const user = useUser()
 
-  // Add debugging and error boundary
-  console.log('[NotificationBell] Component rendering, loading:', loading, 'user:', !!user)
-
-  // Get user directly to avoid dependency on session hooks
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        console.log('[NotificationBell] Getting user...')
-        const { data: { user }, error } = await supabase.auth.getUser()
-        if (error) {
-          console.error('[NotificationBell] Error getting user:', error)
-        } else {
-          console.log('[NotificationBell] User found:', user?.email)
-        }
-        setUser(user)
-      } catch (err) {
-        console.error('[NotificationBell] Unexpected error getting user:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    getUser()
-  }, [supabase])
-
-  // Don't render if no user or still loading
-  if (loading) {
-    console.log('[NotificationBell] Still loading, showing placeholder')
-    return <div className="w-8 h-8" /> // Placeholder
-  }
-  
-  if (!user) {
-    console.log('[NotificationBell] No user found, not rendering')
-    return null
-  }
+  // Don't render if no user
+  if (!user) return null
 
   useEffect(() => {
     if (!user || !isEnabled) return
@@ -169,14 +135,12 @@ export function NotificationBell() {
           .eq('read', false)
 
         if (error) {
-          console.error('Error checking notifications:', error.message)
           setIsEnabled(false)
           return
         }
 
         setUnreadCount(count || 0)
       } catch (err) {
-        console.error('Error checking notifications:', err)
         setIsEnabled(false)
       }
     }
