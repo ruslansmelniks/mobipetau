@@ -2,12 +2,14 @@
 import { SessionContextProvider } from '@supabase/auth-helpers-react';
 import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs';
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Session } from '@supabase/supabase-js';
 
 export default function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [supabaseClient] = useState(() => createPagesBrowserClient());
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
 
   useEffect(() => {
     // Get initial session
@@ -27,42 +29,50 @@ export default function SupabaseProvider({ children }: { children: React.ReactNo
     return () => subscription.unsubscribe();
   }, [supabaseClient]);
 
-  // Add session validation
   useEffect(() => {
-    const validateSession = async () => {
-      try {
-        console.log('[SupabaseProvider] Validating session...');
-        const { data: { session }, error } = await supabaseClient.auth.getSession();
-        
-        if (error) {
-          console.error('[SupabaseProvider] Session validation error:', error);
-        }
+    // Define public routes that don't need session validation
+    const publicRoutes = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/services', '/about', '/contact'];
+    const isPublicRoute = publicRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
 
-        if (!session) {
-          // Only attempt refresh if a Supabase auth cookie exists
-          const hasAuthCookie = typeof document !== 'undefined' && document.cookie.includes('sb-');
-          if (hasAuthCookie) {
-            console.log('[SupabaseProvider] No session found, attempting refresh...');
-            const { data, error: refreshError } = await supabaseClient.auth.refreshSession();
-            if (refreshError) {
-              console.error('[SupabaseProvider] Session refresh failed:', refreshError);
-            } else if (data.session) {
-              console.log('[SupabaseProvider] Session refreshed successfully');
-              setSession(data.session);
-            }
-          } else {
-            // No session and no cookie, just set loading to false
-            setLoading(false);
+    // Only attempt to validate session on protected routes
+    if (!isPublicRoute) {
+      const validateSession = async () => {
+        try {
+          console.log('[SupabaseProvider] Validating session for protected route:', pathname);
+          const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+          if (error) {
+            console.error('[SupabaseProvider] Session validation error:', error);
           }
-        }
-      } catch (error) {
-        console.error('[SupabaseProvider] Session validation failed:', error);
-        setLoading(false);
-      }
-    };
 
-    validateSession();
-  }, [supabaseClient]);
+          if (!session) {
+            // Only attempt refresh if a Supabase auth cookie exists
+            const hasAuthCookie = typeof document !== 'undefined' && document.cookie.includes('sb-');
+            if (hasAuthCookie) {
+              console.log('[SupabaseProvider] No session found, attempting refresh...');
+              const { data, error: refreshError } = await supabaseClient.auth.refreshSession();
+              if (refreshError) {
+                console.error('[SupabaseProvider] Session refresh failed:', refreshError);
+              } else if (data.session) {
+                console.log('[SupabaseProvider] Session refreshed successfully');
+                setSession(data.session);
+              }
+            } else {
+              setLoading(false);
+            }
+          }
+        } catch (error) {
+          console.error('[SupabaseProvider] Session validation failed:', error);
+          setLoading(false);
+        }
+      };
+      validateSession();
+    } else {
+      // On public routes, just set loading to false if not already
+      setLoading(false);
+      console.log('[SupabaseProvider] Skipping session validation for public route:', pathname);
+    }
+  }, [supabaseClient, pathname]);
 
   return (
     <SessionContextProvider supabaseClient={supabaseClient} initialSession={session}>
