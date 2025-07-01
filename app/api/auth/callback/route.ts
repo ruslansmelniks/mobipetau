@@ -1,4 +1,4 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/utils/supabase/server';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   console.log('[Auth Callback] Processing callback with code:', code ? 'exists' : 'missing');
   
   if (code) {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createClient();
     
     try {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);

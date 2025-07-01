@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/utils/supabase/client'
 import { useRouter } from "next/navigation"
 import { ProfileFormData, UserProfile } from "@/types"
 
@@ -14,7 +14,7 @@ export default function ProfilePage() {
   const [formData, setFormData] = useState<ProfileFormData | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [supabase] = useState(() => createPagesBrowserClient())
+  const [supabase] = useState(() => createClient())
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const router = useRouter()
 

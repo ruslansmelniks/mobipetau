@@ -1,29 +1,19 @@
-import type { Metadata } from 'next'
 import './globals.css'
-import SupabaseProvider from './SupabaseProvider'
-import { SmartLogo } from "@/components/smart-logo"
-import { NotificationBell } from "@/components/notification-bell"
-import { Providers } from '@/components/providers'
 
-export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+export const metadata = {
+  title: 'MobiPet',
+  description: 'Online vet directory for pet owners',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
     <html lang="en">
       <body>
-        <SupabaseProvider>
-          <Providers>
-            {children}
-          </Providers>
-        </SupabaseProvider>
+        {children}
       </body>
     </html>
   )

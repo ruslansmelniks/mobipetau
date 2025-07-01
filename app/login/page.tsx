@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Eye, EyeOff } from "lucide-react"
@@ -13,137 +13,33 @@ import { SmartLogo } from "@/components/smart-logo"
 import type { AuthSession } from '@supabase/supabase-js'
 
 export default function LoginPage() {
-  const [session, setSession] = useState<AuthSession | null>(null)
-  const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [isRedirecting, setIsRedirecting] = useState(false)
-  const supabase = createClientComponentClient()
+  const router = useRouter()
 
-  // Check for error parameters in URL
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const errorParam = urlParams.get('error');
-      
-      if (errorParam) {
-        console.log('[LoginPage] Error parameter found:', errorParam);
-        switch (errorParam) {
-          case 'auth_callback_failed':
-            setError('Authentication failed. Please try logging in again.');
-            break;
-          case 'unexpected_error':
-            setError('An unexpected error occurred. Please try again.');
-            break;
-          default:
-            setError('Login failed. Please try again.');
-        }
-        
-        // Clean up the URL
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
-      }
-    }
-  }, []);
+  async function handleSignIn(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
 
-  useEffect(() => {
-    // Check if already logged in on mount
-    const checkSession = async () => {
-      console.log('[LoginPage] Checking session on mount...')
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('[LoginPage] Session check result:', {
-        hasSession: !!session,
-        userEmail: session?.user?.email,
-        userRole: session?.user?.user_metadata?.role
-      })
-      
-      if (session && !isRedirecting) {
-        console.log('[LoginPage] User already logged in, redirecting to portal')
-        setIsRedirecting(true)
-        router.push('/portal/bookings')
-      }
-    }
-    checkSession()
-  }, [router, isRedirecting, supabase])
+    const supabase = createClient()
+    
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    // Enhanced validation
-    if (!email.trim()) {
-      setError("Please enter your email address");
-      return;
+    if (error) {
+      setError(error.message)
+      setIsLoading(false)
+      return
     }
 
-    if (!password.trim()) {
-      setError("Please enter your password");
-      return;
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError("Please enter a valid email address");
-      return;
-    }
-
-    console.log('Form state:', { email, password: '***' });
-    console.log('Submitting login form...');
-
-    try {
-      setIsLoading(true);
-      const supabase = createClientComponentClient();
-      
-      console.log('Attempting Supabase sign in...');
-      
-      // Sign in with Supabase
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password.trim(),
-      });
-
-      console.log('Supabase response:', { 
-        hasData: !!data, 
-        hasUser: !!data?.user, 
-        error: signInError?.message 
-      });
-
-      if (signInError) {
-        console.error('Supabase login error:', signInError);
-        setError(signInError.message || "Invalid email or password.");
-        setIsLoading(false);
-        return;
-      }
-
-      if (!data?.user) {
-        console.error('No user data returned from Supabase');
-        setError("Login failed. Please try again.");
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('Login successful for user:', data.user.email);
-      console.log('User role:', data.user.user_metadata?.role);
-
-      // Get user role
-      const userRole = data.user.user_metadata?.role || 'pet_owner';
-      const redirectPath = userRole === 'admin' ? '/admin' : 
-                          userRole === 'vet' ? '/vet' : 
-                          '/portal/bookings';
-
-      console.log('Redirecting to:', redirectPath);
-
-      // CRITICAL: Force a hard navigation to ensure cookies are properly set
-      window.location.replace(redirectPath);
-    } catch (err: any) {
-      console.error('Login form error:', err);
-      setError("An unexpected error occurred. Please try again.");
-      setIsLoading(false);
-    }
+    setIsLoading(false)
+    router.push('/portal/bookings')
+    router.refresh()
   }
 
   return (
@@ -195,7 +91,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4 w-full">
+          <form onSubmit={handleSignIn} className="space-y-4 w-full">
             <div>
               <Input
                 id="email"
@@ -211,28 +107,19 @@ export default function LoginPage() {
             <div className="relative">
               <Input
                 id="password"
-                type={showPassword ? "text" : "password"}
+                type="password"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full"
               />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                onClick={() => setShowPassword(!showPassword)}
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
             </div>
 
             <Button
               type="submit"
               className="w-full bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] h-11"
               disabled={isLoading}
-              onClick={() => console.log('[LoginPage] Submit button clicked')}
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>

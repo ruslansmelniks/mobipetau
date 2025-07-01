@@ -6,12 +6,12 @@ import Link from "next/link";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/utils/supabase/client';
 import { SmartLogo } from "@/components/smart-logo";
 
 export default function SignupSuccessPage() {
   const router = useRouter();
-  const [supabase] = useState(() => createPagesBrowserClient());
+  const [supabase] = useState(() => createClient());
   const [isLoading, setIsLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
   const [error, setError] = useState<string | null>(null);

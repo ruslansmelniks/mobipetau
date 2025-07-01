@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/utils/supabase/client'
 import BookingsContent from './BookingsContent'
 
 export default function BookingsPage() {
@@ -10,7 +10,7 @@ export default function BookingsPage() {
   const [userRole, setUserRole] = useState('pet_owner')
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
 
   useEffect(() => {
     const checkAuth = async () => {
