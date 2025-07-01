@@ -23,11 +23,45 @@ export default function LoginPage() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const supabase = createClientComponentClient()
 
+  // Check for error parameters in URL
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorParam = urlParams.get('error');
+      
+      if (errorParam) {
+        console.log('[LoginPage] Error parameter found:', errorParam);
+        switch (errorParam) {
+          case 'auth_callback_failed':
+            setError('Authentication failed. Please try logging in again.');
+            break;
+          case 'unexpected_error':
+            setError('An unexpected error occurred. Please try again.');
+            break;
+          default:
+            setError('Login failed. Please try again.');
+        }
+        
+        // Clean up the URL
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     // Check if already logged in on mount
     const checkSession = async () => {
+      console.log('[LoginPage] Checking session on mount...')
       const { data: { session } } = await supabase.auth.getSession()
+      console.log('[LoginPage] Session check result:', {
+        hasSession: !!session,
+        userEmail: session?.user?.email,
+        userRole: session?.user?.user_metadata?.role
+      })
+      
       if (session && !isRedirecting) {
+        console.log('[LoginPage] User already logged in, redirecting to portal')
         setIsRedirecting(true)
         router.push('/portal/bookings')
       }
@@ -39,31 +73,61 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    if (!email || !password) {
-      setError("Please enter both email and password");
+    // Enhanced validation
+    if (!email.trim()) {
+      setError("Please enter your email address");
       return;
     }
+
+    if (!password.trim()) {
+      setError("Please enter your password");
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    console.log('Form state:', { email, password: '***' });
+    console.log('Submitting login form...');
 
     try {
       setIsLoading(true);
       const supabase = createClientComponentClient();
+      
+      console.log('Attempting Supabase sign in...');
+      
       // Sign in with Supabase
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: email.trim(),
+        password: password.trim(),
+      });
+
+      console.log('Supabase response:', { 
+        hasData: !!data, 
+        hasUser: !!data?.user, 
+        error: signInError?.message 
       });
 
       if (signInError) {
+        console.error('Supabase login error:', signInError);
         setError(signInError.message || "Invalid email or password.");
         setIsLoading(false);
         return;
       }
 
       if (!data?.user) {
+        console.error('No user data returned from Supabase');
         setError("Login failed. Please try again.");
         setIsLoading(false);
         return;
       }
+
+      console.log('Login successful for user:', data.user.email);
+      console.log('User role:', data.user.user_metadata?.role);
 
       // Get user role
       const userRole = data.user.user_metadata?.role || 'pet_owner';
@@ -71,9 +135,12 @@ export default function LoginPage() {
                           userRole === 'vet' ? '/vet' : 
                           '/portal/bookings';
 
+      console.log('Redirecting to:', redirectPath);
+
       // CRITICAL: Force a hard navigation to ensure cookies are properly set
       window.location.replace(redirectPath);
     } catch (err: any) {
+      console.error('Login form error:', err);
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }
@@ -165,6 +232,7 @@ export default function LoginPage() {
               type="submit"
               className="w-full bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] h-11"
               disabled={isLoading}
+              onClick={() => console.log('[LoginPage] Submit button clicked')}
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
@@ -186,7 +254,14 @@ export default function LoginPage() {
         <div className="container mx-auto px-4 max-w-[1400px]">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-4 md:mb-0">
-              <Image src="/logo.png" alt="MobiPet Logo" width={96} height={32} className="h-[32px] w-auto" />
+              <Image 
+                src="/logo.png" 
+                alt="MobiPet Logo" 
+                width={96} 
+                height={32} 
+                className="h-[32px] w-auto" 
+                priority
+              />
             </div>
             <div className="text-sm text-gray-500">© 2025 MobiPet. All rights reserved.</div>
           </div>

@@ -88,11 +88,13 @@ export async function middleware(request: NextRequest) {
   // Get user session
   const { data: { user } } = await supabase.auth.getUser()
   
-  console.log('[Middleware]', {
+  console.log('[Middleware] Session data:', {
     pathname,
     hasUser: !!user,
     userId: user?.id,
-    userRole: user?.user_metadata?.role
+    userEmail: user?.email,
+    userRole: user?.user_metadata?.role,
+    session: user ? 'exists' : 'null'
   })
 
   // Protected routes that require authentication
@@ -112,6 +114,11 @@ export async function middleware(request: NextRequest) {
                         userRole === 'vet' ? '/vet' : 
                         '/portal/bookings';
     console.log('[Middleware] Authenticated user on auth page, redirecting to:', redirectPath)
+    console.log('[Middleware] User details for redirect:', {
+      email: user.email,
+      role: userRole,
+      redirectPath
+    })
     return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
@@ -127,7 +134,8 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public files (images, etc.)
+     * - well-known (for DevTools)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|.well-known|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 } 
