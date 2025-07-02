@@ -134,12 +134,19 @@ export function NotificationBell() {
           .eq('read', false)
 
         if (error) {
+          console.error('Notifications check error:', error)
+          // Don't disable notifications for RLS errors, just set count to 0
+          if (error.code === '42501' || error.code === 'PGRST116') {
+            setUnreadCount(0)
+            return
+          }
           setIsEnabled(false)
           return
         }
 
         setUnreadCount(count || 0)
       } catch (err) {
+        console.error('Notifications check exception:', err)
         setIsEnabled(false)
       }
     }
@@ -189,7 +196,12 @@ export function NotificationBell() {
 
       if (notificationsError) {
         console.error('Error fetching notifications:', notificationsError);
-        return;
+        // Don't return early for RLS errors, just continue with empty notifications
+        if (notificationsError.code === '42501' || notificationsError.code === 'PGRST116') {
+          console.log('RLS error for notifications, continuing with empty array');
+        } else {
+          return;
+        }
       }
 
       // Then get appointments that are waiting for vet response

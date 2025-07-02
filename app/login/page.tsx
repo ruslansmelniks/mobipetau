@@ -141,14 +141,7 @@ export default function LoginPage() {
         <div className="container mx-auto px-4 max-w-[1400px]">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-4 md:mb-0">
-              <Image 
-                src="/logo.png" 
-                alt="MobiPet Logo" 
-                width={96} 
-                height={32} 
-                className="h-[32px] w-auto" 
-                priority
-              />
+              <SmartLogo noLink />
             </div>
             <div className="text-sm text-gray-500">© 2025 MobiPet. All rights reserved.</div>
           </div>
