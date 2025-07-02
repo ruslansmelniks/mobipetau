@@ -12,13 +12,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { BookingSteps } from "@/components/booking-steps"
-import { useSupabaseClient, useUser } from '@supabase/auth-helpers-react'
 import { useRouter } from 'next/navigation'
 import { SmartLogo } from "@/components/smart-logo"
+import { supabase } from '@/lib/supabase'
 
 export default function AddPet() {
-  const supabase = useSupabaseClient();
-  const user = useUser();
   const router = useRouter();
   const [petImage, setPetImage] = useState<string | null>(null);
   const [petName, setPetName] = useState("");
@@ -30,6 +28,7 @@ export default function AddPet() {
   const [gender, setGender] = useState("");
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [user, setUser] = useState<any>(null);
 
   // --- DEBUG PETS SCHEMA ---
   useEffect(() => {
@@ -45,6 +44,14 @@ export default function AddPet() {
         }
       });
   }, [user, supabase]);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    fetchUser();
+  }, []);
   // --- END DEBUG PETS SCHEMA ---
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

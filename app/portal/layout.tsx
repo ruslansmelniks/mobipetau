@@ -5,14 +5,18 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { PortalTabs } from "@/components/portal-tabs"
-import { NotificationBell } from "@/components/notification-bell"
-import { createClient } from '@/lib/supabase/client'
+import { NotificationBellWrapper } from "@/components/notification-bell-wrapper"
+import { AppointmentNotifications } from "@/components/appointment-notifications"
+import { ErrorBoundary } from "@/components/error-boundary"
+import { redirectBasedOnRole } from "@/lib/utils"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
 import { SmartLogo } from '@/components/smart-logo'
 
 function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const { user, loading: userLoading } = useUser()
+  const supabase = useSupabaseClient()
   const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,43 +26,7 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
     async function checkAuth() {
       try {
         console.log('[PortalLayout] Starting auth check...')
-        const supabase = createClient()
         
-        // First try to get session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        console.log('[PortalLayout] Session check:', { hasSession: !!session, error: sessionError?.message })
-        
-        if (session) {
-          console.log('[PortalLayout] Session found, user:', session.user.email)
-          if (!mounted) return;
-          setUser(session.user)
-          
-          // Get user profile with role
-          const { data: profile } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', session.user.id)
-            .single()
-
-          if (!mounted) return;
-          setUserRole(profile?.role || 'pet_owner')
-          setIsLoading(false)
-          return
-        }
-        
-        // If no session, try to get user directly
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        console.log('[PortalLayout] Direct user check:', { hasUser: !!user, error: authError?.message })
-        
-        if (!mounted) return;
-
-        if (authError) {
-          console.error('[PortalLayout] Auth error:', authError)
-          setError(authError.message)
-          router.push('/login')
-          return
-        }
-
         if (!user) {
           console.log('[PortalLayout] No user found, redirecting to login')
           router.push('/login')
@@ -76,7 +44,6 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
 
         if (!mounted) return;
 
-        setUser(user)
         setUserRole(profile?.role || 'pet_owner')
       } catch (err) {
         if (!mounted) return;
@@ -90,18 +57,20 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
       }
     }
 
-    checkAuth()
+    if (!userLoading) {
+      checkAuth()
+    }
 
     return () => {
       mounted = false;
     }
-  }, []) // Remove router from dependencies to prevent re-runs
+  }, [user, userLoading, router, supabase])
 
   const handleLogout = () => {
     router.push('/logout')
   }
 
-  if (isLoading) {
+  if (userLoading || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -129,7 +98,7 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
             </div>
             
             <div className="flex items-center space-x-4">
-              <NotificationBell />
+              <NotificationBellWrapper />
               <span className="text-sm text-gray-700">Welcome, {displayName}</span>
               <Button onClick={handleLogout} variant="outline" size="sm">
                 Log out

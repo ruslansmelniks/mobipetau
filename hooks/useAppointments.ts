@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useSupabaseClient } from './useSupabase';
 import { AppointmentService, Appointment, AppointmentWithRelations } from '@/lib/api/appointments';
 
 export function useAppointments() {

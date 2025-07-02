@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
 import {
   Table,
   TableBody,
@@ -77,7 +77,7 @@ export default function AdminUsersPage() {
   const [formError, setFormError] = useState('')
   const [emailError, setEmailError] = useState('')
   const supabase = useSupabaseClient()
-  const user = useUser();
+  const { user } = useUser();
 
   const fetchUsers = async () => {
     setLoading(true);

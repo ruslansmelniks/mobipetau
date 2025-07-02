@@ -6,10 +6,10 @@ import Link from "next/link"
 import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
-import { useUser } from "@supabase/auth-helpers-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useAppointments } from "@/hooks/useAppointments"
 import { SmartLogo } from "@/components/smart-logo"
+import { supabase } from '@/lib/supabase'
 
 interface ConfirmationData {
   appointmentId: string;
@@ -23,7 +23,7 @@ interface ConfirmationData {
 export default function ConfirmationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const user = useUser();
+  const [user, setUser] = useState<any>(null);
   const { useAppointment, useUpdateAppointmentStatus } = useAppointments();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +35,14 @@ export default function ConfirmationPage() {
 
   const { data: appointment, isLoading: isLoadingAppointment } = useAppointment(urlAppointmentId ?? '');
   const updateAppointmentStatus = useUpdateAppointmentStatus();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     if (!user) {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Bell, DollarSign, MapPin, Check, X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { toast } from "@/components/ui/use-toast"
+import { useToast } from "@/components/ui/use-toast"
 
 interface Service {
   id: string;
@@ -111,16 +111,15 @@ interface DatabaseAppointmentService {
 }
 
 export function NotificationBell() {
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [isEnabled, setIsEnabled] = useState(true)
+  // ALL HOOKS MUST BE AT THE TOP, BEFORE ANY CONDITIONS
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isEnabled, setIsEnabled] = useState(true)
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
+  const { toast } = useToast()
   const supabase = useSupabaseClient()
-  const user = useUser()
-
-  // Don't render if no user
-  if (!user) return null
+  const { user } = useUser()
 
   useEffect(() => {
     if (!user || !isEnabled) return
@@ -197,60 +196,21 @@ export function NotificationBell() {
       const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
-          id, total_price, address, date, time_slot, status, notes, created_at, 
-          pet_id, pet_owner_id, pets:pet_id(*), pet_owner:pet_owner_id(*)
-        `)
-        .eq('vet_id', user.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-
-      if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError);
-        return;
-      }
-
-      // Process appointments into notifications format
-      const appointmentNotifications = (appointmentsData || []).map(appointment => {
-        const typedAppointment = appointment as unknown as DatabaseAppointment;
-        return {
-          id: typedAppointment.id,
-          created_at: typedAppointment.created_at,
-          message: `New appointment request from ${typedAppointment.pet_owner.first_name || 'Unknown'} ${typedAppointment.pet_owner.last_name || ''} for ${typedAppointment.pets.name || 'Unknown Pet'}`,
-          type: 'appointment_request',
-          reference_id: typedAppointment.id,
-          reference_type: 'appointment',
-          read: false,
-          appointment: {
-            ...typedAppointment,
-            services: []
-          }
-        } as Notification;
-      });
-
-      // Combine both types of notifications
-      const allNotifications = [
-        ...appointmentNotifications,
-        ...(notificationsData || []).map(notification => ({
-          id: notification.id,
-          created_at: notification.created_at,
-          message: notification.message,
-          type: notification.type,
-          reference_id: notification.reference_id,
-          reference_type: notification.reference_type,
-          read: notification.read,
-          appointment: null
-        } as Notification))
-      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      setNotifications(allNotifications);
-
-      // Fetch services for appointments
-      appointmentNotifications.forEach(async (notification) => {
-        if (!notification.appointment) return;
-        
-        const { data: servicesData } = await supabase
-          .from('appointment_services')
-          .select(`
+          *,
+          pets (
+            id,
+            name,
+            type,
+            breed
+          ),
+          pet_owner (
+            id,
+            first_name,
+            last_name,
+            email,
+            phone
+          ),
+          appointment_services (
             id,
             service_id,
             price,
@@ -260,31 +220,68 @@ export function NotificationBell() {
               description,
               price
             )
-          `)
-          .eq('appointment_id', notification.id);
+          )
+        `)
+        .eq('status', 'waiting_for_vet_response')
+        .order('created_at', { ascending: false });
 
-        if (servicesData && servicesData.length > 0) {
-          const typedServicesData = servicesData as unknown as DatabaseAppointmentService[];
-          const updatedAppointment = {
-            ...notification.appointment,
-            services: typedServicesData.map(service => ({
-              name: service.services.name,
-              price: service.price || service.services.price
-            }))
-          };
+      if (appointmentsError) {
+        console.error('Error fetching appointments:', appointmentsError);
+        return;
+      }
 
-          setNotifications(prev => 
-            prev.map(n => {
-              if (n.id === notification.id && n.appointment) {
-                return { ...n, appointment: updatedAppointment };
-              }
-              return n;
-            })
-          );
+      // Combine notifications and appointments
+      const combinedNotifications: Notification[] = [];
+
+      // Add notifications
+      if (notificationsData) {
+        for (const notification of notificationsData) {
+          combinedNotifications.push({
+            id: notification.id,
+            created_at: notification.created_at,
+            message: notification.message,
+            appointment: null,
+            type: notification.type,
+            reference_id: notification.reference_id,
+            reference_type: notification.reference_type,
+            read: notification.read
+          });
         }
-      });
+      }
+
+      // Add appointments as notifications for vets
+      if (appointmentsData && user.user_metadata?.role === 'vet') {
+        for (const appointment of appointmentsData) {
+          const services = appointment.appointment_services?.map((as: any) => ({
+            name: as.services.name,
+            price: as.price
+          })) || [];
+
+          combinedNotifications.push({
+            id: `appointment-${appointment.id}`,
+            created_at: appointment.created_at,
+            message: `New appointment request from ${appointment.pet_owner.first_name} ${appointment.pet_owner.last_name}`,
+            appointment: {
+              ...appointment,
+              services
+            },
+            type: 'appointment_request',
+            reference_id: appointment.id,
+            reference_type: 'appointment',
+            read: false
+          });
+        }
+      }
+
+      // Sort by created_at descending
+      combinedNotifications.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setNotifications(combinedNotifications);
+      setUnreadCount(combinedNotifications.length);
     };
-    
+
     fetchNotificationsWithDetails();
   }, [dropdownOpen, user, supabase]);
 

@@ -4,19 +4,20 @@ import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
 import { Button } from "@/components/ui/button"
 import { 
   Users, UserCog, LogOut, Home, Menu, X, UserPlus 
 } from "lucide-react"
 import { getUserRole } from "@/lib/auth"
 import { toast } from "@/components/ui/use-toast"
+import { SmartLogo } from "@/components/smart-logo"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const router = useRouter()
   const supabase = useSupabaseClient()
-  const user = useUser()
+  const { user } = useUser()
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 

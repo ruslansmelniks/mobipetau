@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
 import { 
   Calendar, Clock, MapPin, CheckCircle, XCircle, 
   Clock4, FileText, PlusCircle, DollarSign, 
@@ -73,7 +73,7 @@ export default function AppointmentDetailPage() {
   const router = useRouter()
   const { toast } = useToast()
   const supabase = useSupabaseClient()
-  const user = useUser()
+  const { user } = useUser()
   const appointmentId = params.id as string
   
   const [appointment, setAppointment] = useState<any>(null)

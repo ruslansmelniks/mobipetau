@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { supabase } from '@/lib/supabase'
 import { SmartLogo } from "@/components/smart-logo"
 
 // Define types consistent with app/book/page.tsx
@@ -61,8 +61,7 @@ export default function SelectServices() {
   const [issueDescription, setIssueDescription] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false); // For Next button loading state
   const router = useRouter();
-  const supabase = useSupabaseClient();
-  const user = useUser();
+  const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   const calculateTotal = useCallback(() => {
@@ -71,6 +70,14 @@ export default function SelectServices() {
       .filter((service) => selectedServiceIds.includes(service.id))
       .reduce((total, service) => total + service.price, 0);
   }, [allServices, selectedServiceIds]);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     if (!user) return;

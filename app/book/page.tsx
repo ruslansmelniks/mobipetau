@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
+import { supabase } from '@/lib/supabase'
 import { SmartLogo } from "@/components/smart-logo"
 
 // Define a simple appointment type as per user request
@@ -31,8 +31,7 @@ type DraftAppointment = {
 export default function BookAppointment() {
   console.log('BookAppointment - Component rendering');
   
-  const user = useUser();
-  const supabase = useSupabaseClient();
+  const [user, setUser] = useState<any>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +45,12 @@ export default function BookAppointment() {
   console.log('BookAppointment - Supabase Client:', supabase);
 
   useEffect(() => {
-    if (user !== undefined) {
-      setLoadingUser(false);
-    }
-  }, [user]);
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     console.log('BookAppointment - Pets effect running');

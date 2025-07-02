@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
 
 // Helper function to calculate age from date of birth
 const calculateAge = (dateOfBirth: string): string => {
@@ -78,7 +78,7 @@ const formSteps = [
 ]
 
 export default function PetsPage() {
-  const user = useUser()
+  const { user } = useUser()
   const supabase = useSupabaseClient()
   const [pets, setPets] = useState<any[]>([])
   const [petToEdit, setPetToEdit] = useState<any | null>(null)

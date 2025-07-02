@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useUser } from '@supabase/auth-helpers-react';
+import { useUser } from './useSupabase';
 import { useAppointments } from './useAppointments';
 import { Appointment } from '@/lib/api/appointments';
 
 export function useAppointmentBooking() {
-  const user = useUser();
+  const { user } = useUser();
   const { useDraftAppointment, useUpdateAppointment } = useAppointments();
   
   const { data: draftAppointment, isLoading: isLoadingDraft } = useDraftAppointment(user?.id ?? '');

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
 import { loadStripe } from '@stripe/stripe-js'
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { supabase } from '@/lib/supabase'
 import { SmartLogo } from "@/components/smart-logo"
 
 // Consistent DraftAppointment type
@@ -87,13 +87,20 @@ const SummaryItem = ({ icon, label, value }: { icon: React.ReactNode, label: str
 
 export default function PaymentPage() {
   const router = useRouter();
-  const user = useUser();
-  const supabase = useSupabaseClient();
+  const [user, setUser] = useState<any>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     const createAppointmentAndLoadSummary = async () => {

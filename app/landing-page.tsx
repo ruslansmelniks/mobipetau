@@ -10,15 +10,18 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TestimonialCarousel } from "@/components/testimonial-carousel"
 import { MobileMenu } from "@/components/mobile-menu"
 import { ProviderWaitlistDialog } from "@/components/provider-waitlist-dialog"
-import { useUser } from "@supabase/auth-helpers-react"
+import { useUser } from "@/hooks/useSupabase"
 import { useRouter } from "next/navigation"
 import { SmartLogo } from "@/components/smart-logo"
 import { redirectBasedOnRole } from "@/lib/utils"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Check, Star, MapPin, Clock, DollarSign, Shield, Heart, Users, Award } from "lucide-react"
 
 export default function LandingPage() {
   const [isWaitlistDialogOpen, setIsWaitlistDialogOpen] = useState(false)
+  const { user } = useUser()
   const router = useRouter()
-  const user = useUser()
 
   useEffect(() => {
     if (user) {

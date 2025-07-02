@@ -1,14 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
 import { CheckCircle, Clock, X } from "lucide-react"
 
 export function AppointmentNotifications() {
   const [notifications, setNotifications] = useState<any[]>([])
   const supabase = useSupabaseClient()
-  const user = useUser()
+  const { user } = useUser()
 
   useEffect(() => {
     if (!user) return

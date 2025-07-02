@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { VetPortalTabs } from "@/components/vet-portal-tabs"
-import { NotificationBell } from "@/components/notification-bell"
+import { NotificationBellWrapper } from "@/components/notification-bell-wrapper"
 import { SmartLogo } from "@/components/smart-logo"
 
 export default function VetPortalLayout({ children }: { children: React.ReactNode }) {
@@ -16,7 +16,7 @@ export default function VetPortalLayout({ children }: { children: React.ReactNod
           <div className="flex justify-between items-center">
             <SmartLogo />
             <div className="flex items-center gap-4">
-              <NotificationBell />
+              <NotificationBellWrapper />
               <Button variant="outline" size="sm" className="font-medium" asChild>
                 <Link href="/logout">Log out</Link>
               </Button>

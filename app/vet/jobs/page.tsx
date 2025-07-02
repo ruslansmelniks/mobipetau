@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
 import { getStatusLabel } from "@/lib/appointment-statuses"
 import { toast } from "@/components/ui/use-toast"
 import { Textarea } from "@/components/ui/textarea"
@@ -63,7 +63,7 @@ const isValidUUID = (uuid: string): boolean => {
 };
 
 export default function VetJobsPage() {
-  const user = useUser();
+  const { user } = useUser();
   const supabase = useSupabaseClient();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);

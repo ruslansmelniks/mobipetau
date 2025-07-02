@@ -1,5 +1,4 @@
 import './globals.css'
-import SupabaseProvider from './providers/supabase-provider'
 
 export const metadata = {
   title: 'MobiPet',
@@ -14,9 +13,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SupabaseProvider>
-          {children}
-        </SupabaseProvider>
+        {children}
       </body>
     </html>
   )

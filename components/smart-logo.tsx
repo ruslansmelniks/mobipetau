@@ -1,11 +1,13 @@
 "use client";
 
-import { useUser } from '@supabase/auth-helpers-react';
 import Image from 'next/image';
+import { useUser } from '@/hooks/useSupabase';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export function SmartLogo({ className, noLink }: { className?: string, noLink?: boolean }) {
-  const user = useUser();
+  const { user } = useUser();
+  const router = useRouter();
 
   // Determine the correct home URL based on authentication status
   const getHomeUrl = () => {

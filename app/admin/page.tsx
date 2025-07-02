@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react"
 import { Users, UserCog, Calendar, FileText } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react"
+import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
 import { toast } from "@/components/ui/use-toast"
 
 export default function AdminDashboard() {
   const supabase = useSupabaseClient()
-  const user = useUser();
+  const { user } = useUser();
   const [stats, setStats] = useState({
     totalPetOwners: 0,
     totalVets: 0,

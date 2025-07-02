@@ -1,52 +1,44 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { AlertTriangle } from 'lucide-react';
+'use client'
+
+import { Component, ReactNode } from 'react'
 
 interface Props {
-  children: React.ReactNode;
-  fallback?: React.ComponentType<{ error: Error; reset: () => void }>;
+  children: ReactNode
+  fallback?: ReactNode
 }
 
 interface State {
-  hasError: boolean;
-  error: Error | null;
+  hasError: boolean
+  error?: Error
 }
 
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false, error: null };
+    super(props)
+    this.state = { hasError: false }
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('Error boundary caught:', error, errorInfo)
   }
 
   render() {
     if (this.state.hasError) {
-      const reset = () => this.setState({ hasError: false, error: null });
-      
-      if (this.props.fallback) {
-        const Fallback = this.props.fallback;
-        return <Fallback error={this.state.error!} reset={reset} />;
-      }
-
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
-          <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
-          <p className="text-gray-600 mb-4 text-center max-w-md">
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </p>
-          <Button onClick={reset}>Try Again</Button>
+      return this.props.fallback || (
+        <div className="p-4 border border-red-500 rounded bg-red-50">
+          <p className="text-red-800 font-medium">Something went wrong in this component.</p>
+          <details className="mt-2">
+            <summary className="text-red-600 cursor-pointer text-sm">Error details</summary>
+            <pre className="text-xs text-red-700 mt-2 whitespace-pre-wrap">{this.state.error?.toString()}</pre>
+          </details>
         </div>
-      );
+      )
     }
 
-    return this.props.children;
+    return this.props.children
   }
 } 

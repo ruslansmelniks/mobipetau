@@ -6,12 +6,17 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import { useEffect, useState } from "react"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Calendar, Clock, MapPin, DollarSign, User, PawPrint } from "lucide-react"
 
 export function PortalTabs() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useSupabaseClient();
+  const { user } = useUser();
   
   const tabs = [
     { name: "Profile", href: "/portal/profile" },

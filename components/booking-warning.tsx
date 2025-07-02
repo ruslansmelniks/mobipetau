@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect } from "react"
-import { useUser, useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser, useSupabaseClient } from "@/hooks/useSupabase"
 import { useRouter } from 'next/navigation'
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export function BookingWarning() {
-  const user = useUser();
+  const { user } = useUser();
   const supabase = useSupabaseClient();
   const router = useRouter();
 

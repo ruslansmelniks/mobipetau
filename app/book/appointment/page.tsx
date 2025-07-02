@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter } from "next/navigation"
-import { useSupabaseClient, useUser, useSessionContext } from "@supabase/auth-helpers-react"
+import { supabase } from '@/lib/supabase'
 import GoogleMapsAutocomplete from '@/components/ui/GoogleMapsAutocomplete'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarIcon } from "lucide-react"
@@ -143,9 +143,8 @@ const getAddressSuggestions = (input: string): string[] => {
 
 export default function AppointmentDetails() {
   const router = useRouter()
-  const supabase = useSupabaseClient()
-  const { isLoading: sessionLoading } = useSessionContext()
-  const user = useUser()
+  const [user, setUser] = useState<any>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
 
   // Form state with proper initial values
   const [address, setAddress] = useState<string>('')
@@ -161,6 +160,15 @@ export default function AppointmentDetails() {
   // UI state
   const [loading, setLoading] = useState<boolean>(true)
   const [showPerthWarning, setShowPerthWarning] = useState<boolean>(false)
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setSessionLoading(false);
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     setLoading(false)
