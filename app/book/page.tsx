@@ -38,11 +38,18 @@ export default function BookAppointment() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const [isCancelling, setIsCancelling] = useState(false);
+  const [loadingUser, setLoadingUser] = useState(true);
   const debug = true;
 
   // Add debugging statements
   console.log('BookAppointment - User:', user);
   console.log('BookAppointment - Supabase Client:', supabase);
+
+  useEffect(() => {
+    if (user !== undefined) {
+      setLoadingUser(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     console.log('BookAppointment - Pets effect running');
@@ -84,6 +91,12 @@ export default function BookAppointment() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!loadingUser && !user) {
+      router.replace('/login');
+    }
+  }, [loadingUser, user, router]);
+
   const handlePetSelect = async (petId: string) => {
     setSelectedPet(petId);
     setError(null);
@@ -124,8 +137,18 @@ export default function BookAppointment() {
     router.replace('/portal/bookings');
   };
 
+  if (loadingUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4e968f] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
-    router.replace('/login');
     return null;
   }
 
@@ -153,7 +176,7 @@ export default function BookAppointment() {
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex items-center">
-            <SmartLogo />
+            <SmartLogo noLink />
           </div>
         </div>
       </header>

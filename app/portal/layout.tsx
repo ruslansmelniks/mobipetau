@@ -139,7 +139,11 @@ function PortalLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <PortalTabs />
+      <div className="border-b bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <PortalTabs />
+        </div>
+      </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}

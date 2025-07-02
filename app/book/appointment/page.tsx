@@ -214,7 +214,7 @@ export default function AppointmentDetails() {
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex items-center">
-            <SmartLogo />
+            <SmartLogo noLink />
           </div>
         </div>
       </header>

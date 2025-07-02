@@ -4,7 +4,7 @@ import { useUser } from '@supabase/auth-helpers-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
-export function SmartLogo({ className }: { className?: string }) {
+export function SmartLogo({ className, noLink }: { className?: string, noLink?: boolean }) {
   const user = useUser();
 
   // Determine the correct home URL based on authentication status
@@ -12,6 +12,21 @@ export function SmartLogo({ className }: { className?: string }) {
     if (!user) return '/';
     return '/portal/bookings';
   };
+
+  if (noLink) {
+    return (
+      <span className={`flex items-center ${className || ''}`}>
+        <Image 
+          src="/logo.png" 
+          alt="MobiPet Logo" 
+          width={96} 
+          height={32} 
+          className="h-[32px] w-auto" 
+          priority
+        />
+      </span>
+    );
+  }
 
   return (
     <Link href={getHomeUrl()} className={`flex items-center ${className || ''}`}>
