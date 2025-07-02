@@ -17,7 +17,7 @@ export async function middleware(request: NextRequest) {
   })
 
   // Protected routes
-  if (pathname.startsWith('/portal')) {
+  if (pathname.startsWith('/portal') || pathname.startsWith('/book')) {
     if (!user) {
       console.log('[Middleware] No user for protected route, redirecting to login')
       const url = request.nextUrl.clone()
@@ -26,12 +26,32 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirect logged-in users away from login page
-  if (pathname === '/login' && user) {
-    console.log('[Middleware] User already logged in, redirecting to portal')
-    const url = request.nextUrl.clone()
-    url.pathname = '/portal/bookings'
-    return Response.redirect(url)
+  // Debug logging for /book route
+  if (pathname.startsWith('/book')) {
+    console.log('[Middleware] Book route accessed', {
+      hasUser: !!user,
+      userRole: user?.user_metadata?.role,
+      fullPath: pathname
+    });
+  }
+
+  // Redirect logged-in users away from login or signup page
+  if (user && (pathname === '/login' || pathname === '/signup')) {
+    // Check if there's a redirect parameter
+    const redirectTo = request.nextUrl.searchParams.get('redirectTo')
+    // If user was trying to access /book, redirect them there
+    if (redirectTo === '/book') {
+      return Response.redirect(new URL('/book', request.url))
+    }
+    // Otherwise, redirect based on user role
+    const userRole = user.user_metadata?.role || 'pet_owner'
+    let redirectPath = '/portal/bookings' // default for pet owners
+    if (userRole === 'admin') {
+      redirectPath = '/admin'
+    } else if (userRole === 'vet') {
+      redirectPath = '/vet'
+    }
+    return Response.redirect(new URL(redirectPath, request.url))
   }
 
   return supabaseResponse
