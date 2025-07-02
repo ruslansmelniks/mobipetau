@@ -2,8 +2,10 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
   })
 
   const supabase = createServerClient(
@@ -11,26 +13,41 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
+        get(name: string) {
+          return request.cookies.get(name)?.value
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({
-            request,
+        set(name: string, value: string, options: CookieOptions) {
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
+        },
+        remove(name: string, options: CookieOptions) {
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+            maxAge: 0,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+          })
         },
       },
     }
   )
 
   // This will refresh the session if expired - required for Server Components
+  const { data: { session } } = await supabase.auth.getSession()
+
+  // Add session refresh
+  if (session) {
+    await supabase.auth.setSession(session)
+  }
+
   const { data: { user } } = await supabase.auth.getUser()
 
-  return { supabaseResponse, user }
+  return { supabaseResponse: response, user }
 } 

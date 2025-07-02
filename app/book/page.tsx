@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { supabase } from '@/lib/supabase'
 import { SmartLogo } from "@/components/smart-logo"
+import { fetchUserPets, validateUserSession } from "./actions"
 
 // Define a simple appointment type as per user request
 type DraftAppointment = {
@@ -46,11 +47,35 @@ export default function BookAppointment() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      try {
+        // First, ensure we have a valid session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          setError('Authentication error. Please log in again.');
+          router.push('/login');
+          return;
+        }
+
+        if (!session) {
+          console.error('No session found');
+          router.push('/login');
+          return;
+        }
+
+        console.log('Session validated:', session.user.id);
+        setUser(session.user);
+      } catch (err) {
+        console.error('Error fetching user:', err);
+        setError('Authentication error. Please log in again.');
+        router.push('/login');
+      } finally {
+        setLoadingUser(false);
+      }
     };
     fetchUser();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     console.log('BookAppointment - Pets effect running');
@@ -63,22 +88,38 @@ export default function BookAppointment() {
         return;
       }
 
-      console.log('BookAppointment - Fetching pets for user:', user.id);
-      const { data: petData, error: petError } = await supabase
-        .from('pets')
-        .select('*')
-        .eq('owner_id', user.id);
-      
-      console.log('BookAppointment - Pets fetch response:', { petData, petError });
-      
-      if (petError) {
-        setError('Failed to load your pets. Please try refreshing the page.');
-      } else {
-        setPets(petData || []);
+      try {
+        console.log('BookAppointment - Fetching pets for user:', user.id);
+        
+        // Try server action first
+        const petsResult = await fetchUserPets();
+        if ('error' in petsResult) {
+          console.error('Server action failed:', petsResult.error);
+          // Fallback to client-side fetch
+          const { data: petData, error: petError } = await supabase
+            .from('pets')
+            .select('*')
+            .eq('owner_id', user.id);
+          
+          console.log('BookAppointment - Client pets fetch response:', { petData, petError });
+          
+          if (petError) {
+            console.error('Client pets fetch error:', petError);
+            setError('Failed to load your pets. Please try refreshing the page.');
+          } else {
+            setPets(petData || []);
+          }
+        } else {
+          console.log('BookAppointment - Server pets fetch successful:', petsResult.pets);
+          setPets(petsResult.pets);
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching pets:', err);
+        setError('An unexpected error occurred while loading your pets.');
       }
     };
     fetchPets();
-  }, [user, supabase]);
+  }, [user]);
 
   useEffect(() => {
     if (selectedPet) {
@@ -97,6 +138,20 @@ export default function BookAppointment() {
       router.replace('/login');
     }
   }, [loadingUser, user, router]);
+
+  // Add auth state listener
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/login');
+      } else if (event === 'SIGNED_IN' && session) {
+        // Refetch data on sign in
+        window.location.reload();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
 
   const handlePetSelect = async (petId: string) => {
     setSelectedPet(petId);
