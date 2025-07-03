@@ -57,8 +57,9 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           query = query.eq('pet_owner_id', userId)
         }
         
-        // Order by date and time
+        // Order by created_at (most recent first), then date and time
         const { data, error: fetchError } = await query
+          .order('created_at', { ascending: false })
           .order('date', { ascending: false })
           .order('time', { ascending: false })
         
