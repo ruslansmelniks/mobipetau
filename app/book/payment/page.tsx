@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation"
 import { loadStripe } from '@stripe/stripe-js'
 import { supabase } from '@/lib/supabase'
 import { SmartLogo } from "@/components/smart-logo"
+import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 
 // Consistent DraftAppointment type
 type DraftAppointment = {
@@ -298,8 +299,42 @@ export default function PaymentPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
-          <div className="flex items-center">
+          <div className="flex items-center justify-between w-full">
             <SmartLogo noLink />
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="secondary">Cancel booking</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Cancel booking?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to cancel this booking? All progress will be lost.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep booking</AlertDialogCancel>
+                  <AlertDialogAction asChild>
+                    <Button variant="destructive" onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.removeItem('booking_pet_id');
+                        sessionStorage.removeItem('booking_service_ids');
+                        sessionStorage.removeItem('booking_issue_description');
+                        sessionStorage.removeItem('booking_address');
+                        sessionStorage.removeItem('booking_date');
+                        sessionStorage.removeItem('booking_time_slot');
+                        sessionStorage.removeItem('booking_time_of_day');
+                        sessionStorage.removeItem('booking_additional_info');
+                        sessionStorage.removeItem('booking_is_in_perth');
+                        sessionStorage.removeItem('booking_latitude');
+                        sessionStorage.removeItem('booking_longitude');
+                      }
+                      window.location.href = '/portal/bookings';
+                    }}>Yes, cancel</Button>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </header>
