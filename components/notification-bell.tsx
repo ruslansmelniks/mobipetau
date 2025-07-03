@@ -178,124 +178,66 @@ export function NotificationBell() {
     }
   }, [user, supabase, isEnabled])
 
-  // Fetch notifications and appointment details when dropdown opens
-  useEffect(() => {
-    const fetchNotificationsWithDetails = async () => {
-      if (!dropdownOpen || !user) return;
-      
-      console.log('🔍 Fetching notifications for user:', user.id);
-      console.log('🔍 User role:', user.user_metadata?.role);
+  const fetchNotifications = async () => {
+    if (!user) return
 
-      // First get notifications
-      const { data: notificationsData, error: notificationsError } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('read', false)
-        .order('created_at', { ascending: false });
+    setLoading(true)
+    try {
+      // First try the RPC function
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('fetchnotificationswithdetails', { 
+          user_id_param: user.id 
+        })
 
-      if (notificationsError) {
-        console.error('Error fetching notifications:', notificationsError);
-        // Don't return early for RLS errors, just continue with empty notifications
-        if (notificationsError.code === '42501' || notificationsError.code === 'PGRST116') {
-          console.log('RLS error for notifications, continuing with empty array');
-        } else {
-          return;
-        }
-      }
+      if (!rpcError && rpcData) {
+        // Use RPC data
+        setNotifications(rpcData)
+        setUnreadCount(rpcData.filter(n => !n.seen).length)
+      } else {
+        // Fallback to direct query if RPC fails
+        console.log('RPC failed, using direct query:', rpcError)
 
-      // Then get appointments that are waiting for vet response
-      const { data: appointmentsData, error: appointmentsError } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          pets (
-            id,
-            name,
-            type,
-            breed
-          ),
-          pet_owner (
-            id,
-            first_name,
-            last_name,
-            email,
-            phone
-          ),
-          appointment_services (
-            id,
-            service_id,
-            price,
-            services (
+        const { data, error } = await supabase
+          .from('notifications')
+          .select(`
+            *,
+            appointments!appointment_id (
               id,
-              name,
-              description,
-              price
+              date,
+              time_slot,
+              status,
+              pets (name),
+              pet_owner:pet_owner_id (first_name, last_name)
             )
-          )
-        `)
-        .eq('status', 'waiting_for_vet_response')
-        .order('created_at', { ascending: false });
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50)
 
-      if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError);
-        return;
+        if (error) throw error
+
+        // Transform the data to match expected format
+        const transformed = (data || []).map(n => ({
+          ...n,
+          message: n.type === 'appointment' ? 'New appointment request' : 'New notification',
+          appointment_details: n.appointments ? {
+            ...n.appointments,
+            pet_owner_name: n.appointments.pet_owner ? 
+              `${n.appointments.pet_owner.first_name} ${n.appointments.pet_owner.last_name}` : 
+              'Unknown',
+            pet_name: n.appointments.pets?.name || 'Unknown pet'
+          } : null
+        }))
+
+        setNotifications(transformed)
+        setUnreadCount(transformed.filter(n => !n.seen).length)
       }
-
-      // Combine notifications and appointments
-      const combinedNotifications: Notification[] = [];
-
-      // Add notifications
-      if (notificationsData) {
-        for (const notification of notificationsData) {
-          combinedNotifications.push({
-            id: notification.id,
-            created_at: notification.created_at,
-            message: notification.message,
-            appointment: null,
-            type: notification.type,
-            reference_id: notification.reference_id,
-            reference_type: notification.reference_type,
-            read: notification.read
-          });
-        }
-      }
-
-      // Add appointments as notifications for vets
-      if (appointmentsData && user.user_metadata?.role === 'vet') {
-        for (const appointment of appointmentsData) {
-          const services = appointment.appointment_services?.map((as: any) => ({
-            name: as.services.name,
-            price: as.price
-          })) || [];
-
-          combinedNotifications.push({
-            id: `appointment-${appointment.id}`,
-            created_at: appointment.created_at,
-            message: `New appointment request from ${appointment.pet_owner.first_name} ${appointment.pet_owner.last_name}`,
-            appointment: {
-              ...appointment,
-              services
-            },
-            type: 'appointment_request',
-            reference_id: appointment.id,
-            reference_type: 'appointment',
-            read: false
-          });
-        }
-      }
-
-      // Sort by created_at descending
-      combinedNotifications.sort((a, b) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      setNotifications(combinedNotifications);
-      setUnreadCount(combinedNotifications.length);
-    };
-
-    fetchNotificationsWithDetails();
-  }, [dropdownOpen, user, supabase]);
+    } catch (error) {
+      console.error('Error fetching notifications:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleAcceptJob = async (appointmentId: string) => {
     setLoadingActions(prev => ({ ...prev, [appointmentId]: 'accept' }));
