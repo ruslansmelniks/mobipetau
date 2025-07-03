@@ -7,7 +7,6 @@ import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { BookingSteps } from "@/components/booking-steps"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useAppointments } from "@/hooks/useAppointments"
 import { SmartLogo } from "@/components/smart-logo"
 import { supabase } from '@/lib/supabase'
 
@@ -24,7 +23,6 @@ export default function ConfirmationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
-  const { useAppointment, useUpdateAppointmentStatus } = useAppointments();
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,9 +30,6 @@ export default function ConfirmationPage() {
 
   const urlSessionId = searchParams.get('session_id');
   const urlAppointmentId = searchParams.get('appointment_id');
-
-  const { data: appointment, isLoading: isLoadingAppointment } = useAppointment(urlAppointmentId ?? '');
-  const updateAppointmentStatus = useUpdateAppointmentStatus();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -97,7 +92,7 @@ export default function ConfirmationPage() {
     verifyAndConfirmPayment();
   }, [user, urlSessionId, urlAppointmentId]);
 
-  if (isLoading || isLoadingAppointment) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-center px-4">
         <Loader2 className="h-12 w-12 animate-spin text-teal-600 mb-4" />
