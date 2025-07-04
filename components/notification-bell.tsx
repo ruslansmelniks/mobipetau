@@ -129,6 +129,8 @@ export function NotificationBell() {
   const supabase = useSupabaseClient()
   const { user } = useUser()
 
+  console.log('NotificationBell user object:', user);
+
   useEffect(() => {
     if (!user || !isEnabled) return
 
@@ -185,6 +187,14 @@ export function NotificationBell() {
       clearInterval(interval)
     }
   }, [user, supabase, isEnabled])
+
+  // Add useEffect to call fetchNotifications when dropdown opens
+  useEffect(() => {
+    if (dropdownOpen && user) {
+      console.log('Dropdown opened, calling fetchNotifications');
+      fetchNotifications();
+    }
+  }, [dropdownOpen, user]);
 
   const fetchNotifications = async () => {
     console.log('fetchNotifications called, user:', user);
