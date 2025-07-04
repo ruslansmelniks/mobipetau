@@ -61,13 +61,20 @@ interface AppointmentData {
 
 interface Notification {
   id: string;
-  created_at: string;
+  type: string;
   message: string;
-  appointment: AppointmentData | null;
-  type?: string;
-  reference_id?: string;
-  reference_type?: string;
-  read?: boolean;
+  created_at: string;
+  is_read: boolean;  // Changed from seen
+  appointment_id?: string;
+  appointment_details?: {  // Changed from appointment
+    id: string;
+    date: string;
+    time_slot: string;
+    status: string;
+    pet_owner_name: string;
+    pet_name: string;
+  };
+  title?: string;  // Add this since it exists in the table
 }
 
 interface DatabaseAppointment {
@@ -179,65 +186,35 @@ export function NotificationBell() {
   }, [user, supabase, isEnabled])
 
   const fetchNotifications = async () => {
-    if (!user) return
-
-    setLoading(true)
+    if (!user) return;
+    
+    setLoading(true);
     try {
       // First try the RPC function
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('fetchnotificationswithdetails', { 
           user_id_param: user.id 
-        })
-
+        });
+      
       if (!rpcError && rpcData) {
-        // Use RPC data
-        setNotifications(rpcData)
-        setUnreadCount(rpcData.filter(n => !n.seen).length)
+        // Use RPC data directly - it already has the correct structure
+        setNotifications(rpcData);
+        setUnreadCount(rpcData.filter(n => !n.is_read).length);  // Changed from seen to is_read
       } else {
-        // Fallback to direct query if RPC fails
-        console.log('RPC failed, using direct query:', rpcError)
-
-        const { data, error } = await supabase
-          .from('notifications')
-          .select(`
-            *,
-            appointments!appointment_id (
-              id,
-              date,
-              time_slot,
-              status,
-              pets (name),
-              pet_owner:pet_owner_id (first_name, last_name)
-            )
-          `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50)
-
-        if (error) throw error
-
-        // Transform the data to match expected format
-        const transformed = (data || []).map(n => ({
-          ...n,
-          message: n.type === 'appointment' ? 'New appointment request' : 'New notification',
-          appointment_details: n.appointments ? {
-            ...n.appointments,
-            pet_owner_name: n.appointments.pet_owner ? 
-              `${n.appointments.pet_owner.first_name} ${n.appointments.pet_owner.last_name}` : 
-              'Unknown',
-            pet_name: n.appointments.pets?.name || 'Unknown pet'
-          } : null
-        }))
-
-        setNotifications(transformed)
-        setUnreadCount(transformed.filter(n => !n.seen).length)
+        // Log the error for debugging
+        console.error('RPC failed:', rpcError);
+        // For now, just set empty notifications if RPC fails
+        setNotifications([]);
+        setUnreadCount(0);
       }
     } catch (error) {
-      console.error('Error fetching notifications:', error)
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+      setUnreadCount(0);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleAcceptJob = async (appointmentId: string) => {
     setLoadingActions(prev => ({ ...prev, [appointmentId]: 'accept' }));
@@ -341,19 +318,17 @@ export function NotificationBell() {
   };
 
   const formatNotificationMessage = (notification: any) => {
-    if (notification.appointment) {
-      const petName = notification.appointment.pets?.name || 'Unknown Pet';
-      const ownerName = notification.appointment.pet_owner 
-        ? `${notification.appointment.pet_owner.first_name} ${notification.appointment.pet_owner.last_name}`
-        : 'Unknown Owner';
-      const date = notification.appointment.date 
-        ? new Date(notification.appointment.date).toLocaleDateString('en-US', { 
+    if (notification.appointment_details) {
+      const petName = notification.appointment_details.pet_name || 'Unknown Pet';
+      const ownerName = notification.appointment_details.pet_owner_name || 'Unknown Owner';
+      const date = notification.appointment_details.date 
+        ? new Date(notification.appointment_details.date).toLocaleDateString('en-US', { 
             day: '2-digit', 
             month: 'short', 
             year: 'numeric' 
           })
         : 'No date';
-      const time = notification.appointment.time_slot || 'No time';
+      const time = notification.appointment_details.time_slot || 'No time';
       
       return `New appointment for ${petName} from ${ownerName}`;
     }
@@ -361,15 +336,15 @@ export function NotificationBell() {
   };
 
   const formatNotificationDetails = (notification: any) => {
-    if (notification.appointment) {
-      const date = notification.appointment.date 
-        ? new Date(notification.appointment.date).toLocaleDateString('en-US', { 
+    if (notification.appointment_details) {
+      const date = notification.appointment_details.date 
+        ? new Date(notification.appointment_details.date).toLocaleDateString('en-US', { 
             day: '2-digit', 
             month: 'short', 
             year: 'numeric' 
           })
         : 'No date';
-      const time = notification.appointment.time_slot || 'No time';
+      const time = notification.appointment_details.time_slot || 'No time';
       
       return `${date} at ${time}`;
     }
@@ -422,51 +397,25 @@ export function NotificationBell() {
                     {n.message}
                   </div>
                   
-                  {n.appointment && (
+                  {n.appointment_details && (
                     <>
                       <div className="text-xs text-gray-600">
-                        {n.appointment.date ? new Date(n.appointment.date).toLocaleDateString('en-US', {
+                        {n.appointment_details.date ? new Date(n.appointment_details.date).toLocaleDateString('en-US', {
                           day: '2-digit',
                           month: 'short',
                           year: 'numeric'
-                        }) : 'No date'} at {n.appointment.time_slot || 'No time'}
+                        }) : 'No date'} at {n.appointment_details.time_slot || 'No time'}
                       </div>
-                      
-                      {/* Services and Pricing */}
-                      {n.appointment.services && n.appointment.services.length > 0 && (
-                        <div className="text-xs space-y-1">
-                          {n.appointment.services.map((service: any, index: number) => (
-                            <div key={index} className="flex justify-between text-gray-600">
-                              <span>{service.name}</span>
-                              <span>${service.price}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {/* Total Price */}
-                      <div className="flex items-center gap-1 text-green-600 font-semibold text-sm">
-                        <DollarSign className="h-3 w-3" />
-                        <span>${n.appointment.total_price}</span>
-                      </div>
-                      
-                      {/* Location */}
-                      {n.appointment.address && (
-                        <div className="flex items-start gap-1 text-gray-600 text-xs">
-                          <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                          <span className="line-clamp-2">{n.appointment.address}</span>
-                        </div>
-                      )}
                       
                       {/* Quick actions for vets */}
                       <div className="flex gap-2 pt-2">
                         <Button
                           size="sm"
-                          onClick={() => handleAcceptJob(n.appointment!.id)}
-                          disabled={loadingActions[n.appointment!.id] === 'accept'}
+                          onClick={() => handleAcceptJob(n.appointment_details!.id)}
+                          disabled={loadingActions[n.appointment_details!.id] === 'accept'}
                           className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7"
                         >
-                          {loadingActions[n.appointment!.id] === 'accept' ? (
+                          {loadingActions[n.appointment_details!.id] === 'accept' ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <Check className="h-3 w-3" />
@@ -476,11 +425,11 @@ export function NotificationBell() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeclineJob(n.appointment!.id)}
-                          disabled={loadingActions[n.appointment!.id] === 'decline'}
+                          onClick={() => handleDeclineJob(n.appointment_details!.id)}
+                          disabled={loadingActions[n.appointment_details!.id] === 'decline'}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs px-2 py-1 h-7"
                         >
-                          {loadingActions[n.appointment!.id] === 'decline' ? (
+                          {loadingActions[n.appointment_details!.id] === 'decline' ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <X className="h-3 w-3" />
