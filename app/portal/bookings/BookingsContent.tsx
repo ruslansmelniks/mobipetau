@@ -32,8 +32,13 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
       setLoading(true)
       setError(null)
       
+      console.log('Fetching appointments for:', { userId, userRole });
+      
       try {
         const supabase = createClient()
+        
+        // Log the query being made
+        console.log('Building query for role:', userRole);
         
         let query = supabase
           .from('appointments')
@@ -55,22 +60,32 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         // Filter based on user role
         if (userRole === 'vet') {
           // For vets: fetch both assigned appointments AND available jobs (waiting_for_vet)
+          console.log('Vet query: fetching appointments where vet_id =', userId, 'OR status = waiting_for_vet');
           query = query.or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
         } else {
+          console.log('Pet owner query: fetching appointments where pet_owner_id =', userId);
           query = query.eq('pet_owner_id', userId)
         }
         
         // Order by created_at (most recent first), then date and time
+        console.log('Executing query...');
         const { data, error: fetchError } = await query
           .order('created_at', { ascending: false })
           .order('date', { ascending: false })
           .order('time', { ascending: false })
+        
+        console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
         
         if (fetchError) {
           console.error('Supabase error:', fetchError)
           setError(fetchError.message)
         } else {
           setAppointments(data || [])
+          console.log('Set appointments:', data?.length || 0, 'appointments');
+          
+          // Log filtered results for current tab
+          const filtered = getFilteredAppointments();
+          console.log('Filtered appointments for', activeTab, ':', filtered.length);
         }
       } catch (err) {
         console.error('Unexpected error:', err)
