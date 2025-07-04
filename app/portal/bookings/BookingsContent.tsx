@@ -54,7 +54,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         
         // Filter based on user role
         if (userRole === 'vet') {
-          query = query.eq('vet_id', userId)
+          // For vets: fetch both assigned appointments AND available jobs (waiting_for_vet)
+          query = query.or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
         } else {
           query = query.eq('pet_owner_id', userId)
         }
@@ -137,23 +138,34 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   // Filter appointments based on active tab
   const getFilteredAppointments = () => {
+    const isVet = userRole === 'vet';
+    
     switch (activeTab) {
       case 'incoming':
-        return appointments.filter(appointment => 
-          ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
-        )
+        if (isVet) {
+          // For vets: show jobs they can accept (waiting_for_vet) or jobs specifically assigned to them
+          return appointments.filter(appointment => 
+            appointment.status === 'waiting_for_vet' || 
+            (appointment.vet_id === userId && ['requested', 'pending', 'proposed_time'].includes(appointment.status))
+          );
+        } else {
+          // For pet owners: show their pending appointments
+          return appointments.filter(appointment => 
+            ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
+          );
+        }
       case 'ongoing':
         return appointments.filter(appointment => 
           ['confirmed', 'accepted'].includes(appointment.status)
-        )
+        );
       case 'past':
         return appointments.filter(appointment => 
           ['completed', 'cancelled', 'rejected'].includes(appointment.status)
-        )
+        );
       default:
-        return appointments
+        return appointments;
     }
-  }
+  };
 
   const filteredAppointments = getFilteredAppointments()
 
