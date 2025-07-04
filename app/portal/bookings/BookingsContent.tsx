@@ -24,6 +24,37 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [activeTab, setActiveTab] = useState('incoming')
   const fetchingRef = useRef(false)
 
+  // Filter appointments based on active tab - MOVED BEFORE useEffect
+  const getFilteredAppointments = () => {
+    const isVet = userRole === 'vet';
+    
+    switch (activeTab) {
+      case 'incoming':
+        if (isVet) {
+          // For vets: show jobs they can accept (waiting_for_vet) or jobs specifically assigned to them
+          return appointments.filter(appointment => 
+            appointment.status === 'waiting_for_vet' || 
+            (appointment.vet_id === userId && ['requested', 'pending', 'proposed_time'].includes(appointment.status))
+          );
+        } else {
+          // For pet owners: show their pending appointments
+          return appointments.filter(appointment => 
+            ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
+          );
+        }
+      case 'ongoing':
+        return appointments.filter(appointment => 
+          ['confirmed', 'accepted'].includes(appointment.status)
+        );
+      case 'past':
+        return appointments.filter(appointment => 
+          ['completed', 'cancelled', 'rejected'].includes(appointment.status)
+        );
+      default:
+        return appointments;
+    }
+  };
+
   useEffect(() => {
     if (fetchingRef.current) return
     
@@ -40,52 +71,97 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         // Log the query being made
         console.log('Building query for role:', userRole);
         
-        let query = supabase
-          .from('appointments')
-          .select(`
-            *,
-            pets (
-              id,
-              name,
-              type,
-              breed
-            ),
-            vet:vet_id (
-              id,
-              first_name,
-              last_name
-            )
-          `)
-        
-        // Filter based on user role
         if (userRole === 'vet') {
-          // For vets: fetch both assigned appointments AND available jobs (waiting_for_vet)
+          // Simpler query for vets without complex joins
           console.log('Vet query: fetching appointments where vet_id =', userId, 'OR status = waiting_for_vet');
-          query = query.or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
-        } else {
-          console.log('Pet owner query: fetching appointments where pet_owner_id =', userId);
-          query = query.eq('pet_owner_id', userId)
-        }
-        
-        // Order by created_at (most recent first), then date and time
-        console.log('Executing query...');
-        const { data, error: fetchError } = await query
-          .order('created_at', { ascending: false })
-          .order('date', { ascending: false })
-          .order('time', { ascending: false })
-        
-        console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
-        
-        if (fetchError) {
-          console.error('Supabase error:', fetchError)
-          setError(fetchError.message)
-        } else {
-          setAppointments(data || [])
-          console.log('Set appointments:', data?.length || 0, 'appointments');
           
-          // Log filtered results for current tab
-          const filtered = getFilteredAppointments();
-          console.log('Filtered appointments for', activeTab, ':', filtered.length);
+          const { data, error: fetchError } = await supabase
+            .from('appointments')
+            .select(`
+              *,
+              pets (
+                id,
+                name,
+                type,
+                breed,
+                owner_id
+              )
+            `)
+            .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
+            .order('created_at', { ascending: false });
+          
+          console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
+          
+          if (fetchError) {
+            console.error('Supabase error:', fetchError)
+            setError(fetchError.message)
+          } else if (data && data.length > 0) {
+            // Get unique owner IDs
+            const ownerIds = [...new Set(data.map(apt => apt.pets?.owner_id).filter(Boolean))];
+            
+            // Fetch owner details separately
+            const { data: owners } = await supabase
+              .from('users')
+              .select('id, first_name, last_name, email, phone')
+              .in('id', ownerIds);
+            
+            // Map owner data to appointments
+            const appointmentsWithOwners = data.map(apt => ({
+              ...apt,
+              pet_owner: owners?.find(owner => owner.id === apt.pets?.owner_id) || null
+            }));
+            
+            setAppointments(appointmentsWithOwners);
+            console.log('Set appointments:', appointmentsWithOwners.length, 'appointments');
+            
+            // Log filtered results for current tab
+            const filtered = getFilteredAppointments();
+            console.log('Filtered appointments for', activeTab, ':', filtered.length);
+          } else {
+            setAppointments([]);
+            console.log('No appointments found');
+          }
+        } else {
+          // For pet owners: use the original query
+          console.log('Pet owner query: fetching appointments where pet_owner_id =', userId);
+          
+          let query = supabase
+            .from('appointments')
+            .select(`
+              *,
+              pets (
+                id,
+                name,
+                type,
+                breed
+              ),
+              vet:vet_id (
+                id,
+                first_name,
+                last_name
+              )
+            `)
+            .eq('pet_owner_id', userId)
+            .order('created_at', { ascending: false })
+            .order('date', { ascending: false })
+            .order('time', { ascending: false });
+          
+          console.log('Executing query...');
+          const { data, error: fetchError } = await query;
+          
+          console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
+          
+          if (fetchError) {
+            console.error('Supabase error:', fetchError)
+            setError(fetchError.message)
+          } else {
+            setAppointments(data || [])
+            console.log('Set appointments:', data?.length || 0, 'appointments');
+            
+            // Log filtered results for current tab
+            const filtered = getFilteredAppointments();
+            console.log('Filtered appointments for', activeTab, ':', filtered.length);
+          }
         }
       } catch (err) {
         console.error('Unexpected error:', err)
@@ -151,36 +227,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     return time
   }
 
-  // Filter appointments based on active tab
-  const getFilteredAppointments = () => {
-    const isVet = userRole === 'vet';
-    
-    switch (activeTab) {
-      case 'incoming':
-        if (isVet) {
-          // For vets: show jobs they can accept (waiting_for_vet) or jobs specifically assigned to them
-          return appointments.filter(appointment => 
-            appointment.status === 'waiting_for_vet' || 
-            (appointment.vet_id === userId && ['requested', 'pending', 'proposed_time'].includes(appointment.status))
-          );
-        } else {
-          // For pet owners: show their pending appointments
-          return appointments.filter(appointment => 
-            ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
-          );
-        }
-      case 'ongoing':
-        return appointments.filter(appointment => 
-          ['confirmed', 'accepted'].includes(appointment.status)
-        );
-      case 'past':
-        return appointments.filter(appointment => 
-          ['completed', 'cancelled', 'rejected'].includes(appointment.status)
-        );
-      default:
-        return appointments;
-    }
-  };
+
 
   const filteredAppointments = getFilteredAppointments()
 
