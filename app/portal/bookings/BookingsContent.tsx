@@ -106,28 +106,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     )
   }
 
-  if (appointments.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="mb-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full">
-            <Calendar className="w-10 h-10 text-primary" />
-          </div>
-        </div>
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          No appointments yet
-        </h3>
-        <p className="text-gray-600 mb-6 text-center max-w-sm">
-          Book an appointment with a mobile vet who comes to your home
-        </p>
-        <Link href="/book">
-          <Button className="bg-primary hover:bg-primary/90 text-white">
-            Book appointment
-          </Button>
-        </Link>
-      </div>
-    )
-  }
+  // Always show the tabbed interface, even when no appointments
+  // The empty states will be handled within each tab
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -260,9 +240,15 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
       <TabsList className="grid w-full grid-cols-3 mb-6">
-        <TabsTrigger value="incoming">Incoming</TabsTrigger>
-        <TabsTrigger value="ongoing">Ongoing</TabsTrigger>
-        <TabsTrigger value="past">Past</TabsTrigger>
+        <TabsTrigger value="incoming">
+          {userRole === 'vet' ? 'Available Jobs' : 'Incoming'}
+        </TabsTrigger>
+        <TabsTrigger value="ongoing">
+          {userRole === 'vet' ? 'Active Jobs' : 'Ongoing'}
+        </TabsTrigger>
+        <TabsTrigger value="past">
+          {userRole === 'vet' ? 'Completed Jobs' : 'Past'}
+        </TabsTrigger>
       </TabsList>
 
       {['incoming', 'ongoing', 'past'].map((tab) => (
@@ -275,22 +261,22 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 </div>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {tab === 'incoming' && 'No incoming appointments'}
-                {tab === 'ongoing' && 'No ongoing appointments'}
-                {tab === 'past' && 'No past appointments'}
+                {tab === 'incoming' && (userRole === 'vet' ? 'No available jobs' : 'No incoming appointments')}
+                {tab === 'ongoing' && (userRole === 'vet' ? 'No active jobs' : 'No ongoing appointments')}
+                {tab === 'past' && (userRole === 'vet' ? 'No completed jobs' : 'No past appointments')}
               </h3>
               <p className="text-gray-600 mb-6 text-center max-w-sm">
                 {tab === 'incoming' && (userRole === 'pet_owner' 
                   ? 'You have no pending or requested appointments'
-                  : 'You have no incoming appointment requests'
+                  : 'You have no available job requests at the moment'
                 )}
                 {tab === 'ongoing' && (userRole === 'pet_owner' 
                   ? 'You have no confirmed appointments'
-                  : 'You have no ongoing appointments'
+                  : 'You have no active jobs in progress'
                 )}
                 {tab === 'past' && (userRole === 'pet_owner' 
                   ? 'You have no completed or cancelled appointments'
-                  : 'You have no past appointments'
+                  : 'You have no completed jobs in your history'
                 )}
               </p>
               {tab === 'incoming' && userRole === 'pet_owner' && (

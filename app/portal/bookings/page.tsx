@@ -50,7 +50,9 @@ export default function BookingsPage() {
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">My Appointments</h1>
+      <h1 className="text-3xl font-bold mb-6">
+        {userRole === 'vet' ? 'My Jobs' : 'My Appointments'}
+      </h1>
       <BookingsContent userId={user.id} userRole={userRole} />
     </div>
   )

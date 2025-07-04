@@ -17,10 +17,25 @@ export function PortalTabs() {
   const router = useRouter()
   const supabase = useSupabaseClient();
   const { user } = useUser();
+  const [userRole, setUserRole] = useState('pet_owner');
+  
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        setUserRole(profile?.role || 'pet_owner')
+      }
+    }
+    getUserRole()
+  }, [user, supabase])
   
   const tabs = [
     { name: "Profile", href: "/portal/profile" },
-    { name: "My bookings", href: "/portal/bookings" },
+    { name: userRole === 'vet' ? "My jobs" : "My bookings", href: "/portal/bookings" },
     { name: "Messages", href: "/portal/messages" },
     { name: "My pets", href: "/portal/pets" },
   ]
@@ -46,12 +61,14 @@ export function PortalTabs() {
           </Link>
         ))}
       </div>
-      <Button
-        className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-        asChild
-      >
-        <Link href="/book">Book appointment</Link>
-      </Button>
+      {userRole !== 'vet' && (
+        <Button
+          className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+          asChild
+        >
+          <Link href="/book">Book appointment</Link>
+        </Button>
+      )}
     </div>
   )
 }
