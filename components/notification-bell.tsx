@@ -123,6 +123,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isEnabled, setIsEnabled] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
   const { toast } = useToast()
   const supabase = useSupabaseClient()
@@ -186,29 +187,33 @@ export function NotificationBell() {
   }, [user, supabase, isEnabled])
 
   const fetchNotifications = async () => {
+    console.log('fetchNotifications called, user:', user);
     if (!user) return;
     
     setLoading(true);
     try {
       // First try the RPC function
+      console.log('Calling RPC with user_id:', user.id);
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('fetchnotificationswithdetails', { 
           user_id_param: user.id 
         });
       
+      console.log('RPC response:', { rpcData, rpcError });
+      
       if (!rpcError && rpcData) {
-        // Use RPC data directly - it already has the correct structure
+        // Use RPC data directly
+        console.log('Setting notifications:', rpcData);
+        console.log('Notifications is_read values:', rpcData.map((n: any) => ({ id: n.id, is_read: n.is_read })));
         setNotifications(rpcData);
-        setUnreadCount(rpcData.filter(n => !n.is_read).length);  // Changed from seen to is_read
+        setUnreadCount(rpcData.filter(n => !n.is_read).length);
       } else {
-        // Log the error for debugging
         console.error('RPC failed:', rpcError);
-        // For now, just set empty notifications if RPC fails
         setNotifications([]);
         setUnreadCount(0);
       }
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('Error in fetchNotifications:', error);
       setNotifications([]);
       setUnreadCount(0);
     } finally {
@@ -355,6 +360,9 @@ export function NotificationBell() {
   if (!isEnabled || !user) {
     return null
   }
+
+  console.log('Rendering NotificationBell, notifications:', notifications);
+  console.log('Loading state:', loading);
 
   return (
     <>
