@@ -6,6 +6,7 @@ import type { Database } from '@/types/supabase'
 import { Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -20,6 +21,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [appointments, setAppointments] = useState<AppointmentWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('incoming')
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -153,86 +155,159 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     return time
   }
 
-  return (
-    <div className="space-y-4">
-      {appointments.map((appointment) => (
-        <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h3 className="text-lg font-semibold">
-                {formatDate(appointment.date)}
-              </h3>
-              <p className="text-gray-600">
-                {appointment.time_slot || appointment.time || appointment.time_of_day}
-              </p>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appointment.status)}`}>
-              {appointment.status}
-            </span>
-          </div>
-          
-          <div className="space-y-2">
-            {appointment.pets && (
-              <p className="text-gray-700">
-                <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
-              </p>
-            )}
-            
-            {appointment.vet && userRole === 'pet_owner' && (
-              <p className="text-gray-700">
-                <span className="font-medium">Vet:</span> Dr. {appointment.vet.first_name} {appointment.vet.last_name}
-              </p>
-            )}
-            
-            {appointment.address && (
-              <p className="text-gray-700">
-                <span className="font-medium">Location:</span> {appointment.address}
-              </p>
-            )}
-            
-            {appointment.services && (
-              <div className="text-gray-700">
-                <span className="font-medium">Services:</span>
-                <ul className="ml-5 mt-1 list-disc">
-                  {Array.isArray(appointment.services) 
-                    ? appointment.services.map((service: any, index: number) => (
-                        <li key={index}>{service.name || service}</li>
-                      ))
-                    : <li>{String(appointment.services)}</li>
-                  }
-                </ul>
-              </div>
-            )}
-            
-            {appointment.total_price && (
-              <p className="text-gray-700">
-                <span className="font-medium">Total:</span> ${appointment.total_price}
-              </p>
-            )}
-            
-            {appointment.notes && (
-              <p className="text-gray-700">
-                <span className="font-medium">Notes:</span> {appointment.notes}
-              </p>
-            )}
-          </div>
-          
-          <div className="mt-4 pt-4 border-t flex justify-between items-center">
-            <p className="text-sm text-gray-500">
-              Booking ID: {appointment.id.slice(0, 8)}
-            </p>
-            
-            {appointment.status === 'pending' && userRole === 'pet_owner' && (
-              <button 
-                className="text-red-600 hover:text-red-800 text-sm font-medium"
-                onClick={() => {/* Add cancel functionality */}}
-              >
-                Cancel Appointment
-              </button>
-            )}
-          </div>
+  // Filter appointments based on active tab
+  const getFilteredAppointments = () => {
+    switch (activeTab) {
+      case 'incoming':
+        return appointments.filter(appointment => 
+          ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
+        )
+      case 'ongoing':
+        return appointments.filter(appointment => 
+          ['confirmed', 'accepted'].includes(appointment.status)
+        )
+      case 'past':
+        return appointments.filter(appointment => 
+          ['completed', 'cancelled', 'rejected'].includes(appointment.status)
+        )
+      default:
+        return appointments
+    }
+  }
+
+  const filteredAppointments = getFilteredAppointments()
+
+  // Reusable appointment card component
+  const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => (
+    <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h3 className="text-lg font-semibold">
+            {formatDate(appointment.date)}
+          </h3>
+          <p className="text-gray-600">
+            {appointment.time_slot || appointment.time || appointment.time_of_day}
+          </p>
         </div>
-      ))}
+        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appointment.status)}`}>
+          {appointment.status}
+        </span>
+      </div>
+      
+      <div className="space-y-2">
+        {appointment.pets && (
+          <p className="text-gray-700">
+            <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
+          </p>
+        )}
+        
+        {appointment.vet && userRole === 'pet_owner' && (
+          <p className="text-gray-700">
+            <span className="font-medium">Vet:</span> Dr. {appointment.vet.first_name} {appointment.vet.last_name}
+          </p>
+        )}
+        
+        {appointment.address && (
+          <p className="text-gray-700">
+            <span className="font-medium">Location:</span> {appointment.address}
+          </p>
+        )}
+        
+        {appointment.services && (
+          <div className="text-gray-700">
+            <span className="font-medium">Services:</span>
+            <ul className="ml-5 mt-1 list-disc">
+              {Array.isArray(appointment.services) 
+                ? appointment.services.map((service: any, index: number) => (
+                    <li key={index}>{service.name || service}</li>
+                  ))
+                : <li>{String(appointment.services)}</li>
+              }
+            </ul>
+          </div>
+        )}
+        
+        {appointment.total_price && (
+          <p className="text-gray-700">
+            <span className="font-medium">Total:</span> ${appointment.total_price}
+          </p>
+        )}
+        
+        {appointment.notes && (
+          <p className="text-gray-700">
+            <span className="font-medium">Notes:</span> {appointment.notes}
+          </p>
+        )}
+      </div>
+      
+      <div className="mt-4 pt-4 border-t flex justify-between items-center">
+        <p className="text-sm text-gray-500">
+          Booking ID: {appointment.id.slice(0, 8)}
+        </p>
+        
+        {appointment.status === 'pending' && userRole === 'pet_owner' && (
+          <button 
+            className="text-red-600 hover:text-red-800 text-sm font-medium"
+            onClick={() => {/* Add cancel functionality */}}
+          >
+            Cancel Appointment
+          </button>
+        )}
+      </div>
     </div>
+  )
+
+  return (
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsTrigger value="incoming">Incoming</TabsTrigger>
+        <TabsTrigger value="ongoing">Ongoing</TabsTrigger>
+        <TabsTrigger value="past">Past</TabsTrigger>
+      </TabsList>
+
+      {['incoming', 'ongoing', 'past'].map((tab) => (
+        <TabsContent key={tab} value={tab} className="space-y-4">
+          {filteredAppointments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full">
+                  <Calendar className="w-10 h-10 text-primary" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {tab === 'incoming' && 'No incoming appointments'}
+                {tab === 'ongoing' && 'No ongoing appointments'}
+                {tab === 'past' && 'No past appointments'}
+              </h3>
+              <p className="text-gray-600 mb-6 text-center max-w-sm">
+                {tab === 'incoming' && (userRole === 'pet_owner' 
+                  ? 'You have no pending or requested appointments'
+                  : 'You have no incoming appointment requests'
+                )}
+                {tab === 'ongoing' && (userRole === 'pet_owner' 
+                  ? 'You have no confirmed appointments'
+                  : 'You have no ongoing appointments'
+                )}
+                {tab === 'past' && (userRole === 'pet_owner' 
+                  ? 'You have no completed or cancelled appointments'
+                  : 'You have no past appointments'
+                )}
+              </p>
+              {tab === 'incoming' && userRole === 'pet_owner' && (
+                <Link href="/book">
+                  <Button className="bg-primary hover:bg-primary/90 text-white">
+                    Book appointment
+                  </Button>
+                </Link>
+              )}
+            </div>
+          ) : (
+            filteredAppointments.map((appointment) => (
+              <AppointmentCard key={appointment.id} appointment={appointment} />
+            ))
+          )}
+        </TabsContent>
+      ))}
+    </Tabs>
   )
 } 
