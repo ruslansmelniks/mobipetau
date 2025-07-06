@@ -350,6 +350,7 @@ export default function AppointmentDetails() {
                       setTimeOfDay(value);
                       setSelectedTimeSlot(null);
                     }}
+                    disabled={!date}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select time of day" />
@@ -364,7 +365,7 @@ export default function AppointmentDetails() {
               </div>
 
               {/* Time Slots */}
-              {timeOfDay && (
+              {timeOfDay && date && (
                 <div className="mt-6">
                   <Label className="text-base font-medium mb-2 block">Available time slots</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
