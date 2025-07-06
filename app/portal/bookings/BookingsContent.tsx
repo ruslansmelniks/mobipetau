@@ -67,6 +67,25 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
       try {
         const supabase = createClient()
         
+        // Temporary debug: Check if supabase client exists
+        console.log('Supabase client exists?', !!supabase);
+        console.log('Supabase type:', typeof supabase);
+        console.log('Supabase client:', supabase);
+        
+        // Add a simple test query right here
+        try {
+          console.log('Testing simple query...');
+          const { data: testData, error: testError } = await supabase
+            .from('appointments')
+            .select('id, status')
+            .eq('status', 'waiting_for_vet')
+            .limit(5);
+          
+          console.log('Test query result:', { testData, testError });
+        } catch (e) {
+          console.error('Test query failed:', e);
+        }
+        
         let query = supabase
           .from('appointments')
           .select(`
