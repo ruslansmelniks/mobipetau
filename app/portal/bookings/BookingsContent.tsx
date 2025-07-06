@@ -59,116 +59,79 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     if (fetchingRef.current) return
     
     const fetchAppointments = async () => {
-      fetchingRef.current = true
-      setLoading(true)
-      setError(null)
+      if (!userId || !userRole) return;
       
+      setLoading(true);
       console.log('Fetching appointments for:', { userId, userRole });
       
       try {
         const supabase = createClient()
         
-        // Log the query being made
-        console.log('Building query for role:', userRole);
-        
+        let query = supabase
+          .from('appointments')
+          .select(`
+            *,
+            pets (
+              id,
+              name,
+              type,
+              breed,
+              owner_id
+            )
+          `);
+
         if (userRole === 'vet') {
-          // Simpler query for vets without complex joins
+          // For vets: get appointments assigned to them OR waiting for any vet
           console.log('Vet query: fetching appointments where vet_id =', userId, 'OR status = waiting_for_vet');
-          
-          const { data, error: fetchError } = await supabase
-            .from('appointments')
-            .select(`
-              *,
-              pets (
-                id,
-                name,
-                type,
-                breed,
-                owner_id
-              )
-            `)
-            .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
-            .order('created_at', { ascending: false });
-          
-          console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
-          
-          if (fetchError) {
-            console.error('Supabase error:', fetchError)
-            setError(fetchError.message)
-          } else if (data && data.length > 0) {
-            // Get unique owner IDs
-            const ownerIds = [...new Set(data.map(apt => apt.pets?.owner_id).filter(Boolean))];
-            
-            // Fetch owner details separately
-            const { data: owners } = await supabase
-              .from('users')
-              .select('id, first_name, last_name, email, phone')
-              .in('id', ownerIds);
-            
-            // Map owner data to appointments
-            const appointmentsWithOwners = data.map(apt => ({
-              ...apt,
-              pet_owner: owners?.find(owner => owner.id === apt.pets?.owner_id) || null
-            }));
-            
-            setAppointments(appointmentsWithOwners);
-            console.log('Set appointments:', appointmentsWithOwners.length, 'appointments');
-            
-            // Log filtered results for current tab
-            const filtered = getFilteredAppointments();
-            console.log('Filtered appointments for', activeTab, ':', filtered.length);
-          } else {
-            setAppointments([]);
-            console.log('No appointments found');
-          }
+          query = query.or(`vet_id.eq.${userId},status.eq.waiting_for_vet`);
         } else {
-          // For pet owners: use the original query
+          // For pet owners: use pet_owner_id directly from appointments table
           console.log('Pet owner query: fetching appointments where pet_owner_id =', userId);
-          
-          let query = supabase
-            .from('appointments')
-            .select(`
-              *,
-              pets (
-                id,
-                name,
-                type,
-                breed
-              ),
-              vet:vet_id (
-                id,
-                first_name,
-                last_name
-              )
-            `)
-            .eq('pet_owner_id', userId)
-            .order('created_at', { ascending: false })
-            .order('date', { ascending: false })
-            .order('time', { ascending: false });
-          
-          console.log('Executing query...');
-          const { data, error: fetchError } = await query;
-          
-          console.log('Query result:', { data, error: fetchError, dataLength: data?.length });
-          
-          if (fetchError) {
-            console.error('Supabase error:', fetchError)
-            setError(fetchError.message)
-          } else {
-            setAppointments(data || [])
-            console.log('Set appointments:', data?.length || 0, 'appointments');
-            
-            // Log filtered results for current tab
-            const filtered = getFilteredAppointments();
-            console.log('Filtered appointments for', activeTab, ':', filtered.length);
-          }
+          query = query.eq('pet_owner_id', userId);
         }
-      } catch (err) {
-        console.error('Unexpected error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load appointments')
+
+        query = query.order('created_at', { ascending: false });
+
+        console.log('Executing query...');
+        const { data, error } = await query;
+        
+        console.log('Query result:', { data, error, dataLength: data?.length });
+        
+        if (error) {
+          console.error('Error fetching appointments:', error);
+          return;
+        }
+
+        // Now fetch pet owner details for the appointments
+        if (data && data.length > 0 && userRole === 'vet') {
+          const ownerIds = [...new Set(data.map(apt => apt.pet_owner_id).filter(Boolean))];
+          
+          const { data: owners } = await supabase
+            .from('users')
+            .select('id, first_name, last_name, email, phone')
+            .in('id', ownerIds);
+          
+          // Map owner data to appointments
+          const appointmentsWithOwners = data.map(apt => ({
+            ...apt,
+            pet_owner: owners?.find(owner => owner.id === apt.pet_owner_id) || null
+          }));
+          
+          setAppointments(appointmentsWithOwners);
+          console.log('Set appointments with owners:', appointmentsWithOwners.length);
+        } else {
+          setAppointments(data || []);
+          console.log('Set appointments:', data?.length || 0);
+        }
+        
+        // Log filtered results for current tab
+        const filtered = getFilteredAppointments();
+        console.log('Filtered appointments for', activeTab, ':', filtered.length);
+        
+      } catch (error) {
+        console.error('Error in fetchAppointments:', error);
       } finally {
-        setLoading(false)
-        fetchingRef.current = false
+        setLoading(false);
       }
     }
 
