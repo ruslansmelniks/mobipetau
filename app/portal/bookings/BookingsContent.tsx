@@ -135,19 +135,13 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           .from('appointments')
           .select(`
             *,
-            pets (
-              id, name, type, breed, image
-            ),
-            pet_owner:users!appointments_pet_owner_id_fkey (
-              id, first_name, last_name, email
-            ),
-            vet:users!appointments_vet_id_fkey (
-              id, first_name, last_name, email
-            )
+            pets:pet_id(id, name, type, breed, image),
+            pet_owner:pet_owner_id(id, first_name, last_name, email, phone)
           `)
           .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
           .order('created_at', { ascending: false });
         console.log('Query completed:', { data: withPets, error: petsError });
+        if (typeof window !== 'undefined' && (window as any).__APPT_DEBUG && (window as any).logAppointments) (window as any).logAppointments(withPets);
         if (petsError) return setAppointments([]);
         setAppointments(withPets || []);
         return;
@@ -156,19 +150,13 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           .from('appointments')
           .select(`
             *,
-            pets (
-              id, name, type, breed, image
-            ),
-            pet_owner:users!appointments_pet_owner_id_fkey (
-              id, first_name, last_name, email
-            ),
-            vet:users!appointments_vet_id_fkey (
-              id, first_name, last_name, email
-            )
+            pets:pet_id(id, name, type, breed, image),
+            pet_owner:pet_owner_id(id, first_name, last_name, email, phone)
           `)
           .eq('pet_owner_id', userId)
           .order('created_at', { ascending: false });
         console.log('Query completed:', { data, error });
+        if (typeof window !== 'undefined' && (window as any).__APPT_DEBUG && (window as any).logAppointments) (window as any).logAppointments(data);
         if (error) return setAppointments([]);
         setAppointments(data || []);
       }
