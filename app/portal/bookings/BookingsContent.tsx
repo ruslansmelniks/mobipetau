@@ -7,6 +7,7 @@ import { Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toast } from '@/hooks/use-toast';
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -57,27 +58,111 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   const supabase = createClient();
 
-  // Remove test function and button
-  // Remove all debug logs from fetchAppointments
+  // Handler functions for vet actions
+  const handleAcceptJob = async (appointmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ 
+          status: 'accepted',
+          vet_id: userId,
+          accepted_at: new Date().toISOString()
+        })
+        .eq('id', appointmentId);
+      if (error) throw error;
+      await fetchAppointments();
+      toast({ title: 'Job accepted successfully!' });
+    } catch (error) {
+      console.error('Error accepting job:', error);
+      toast({ title: 'Failed to accept job', description: String(error), });
+    }
+  };
+
+  const handleDeclineJob = async (appointmentId: string) => {
+    try {
+      const { error: declineError } = await supabase
+        .from('declined_jobs')
+        .insert({ 
+          vet_id: userId,
+          appointment_id: appointmentId,
+          declined_at: new Date().toISOString()
+        });
+      if (declineError) throw declineError;
+      await fetchAppointments();
+      toast({ title: 'Job declined' });
+    } catch (error) {
+      console.error('Error declining job:', error);
+      toast({ title: 'Failed to decline job', description: String(error), });
+    }
+  };
+
+  const handleProposeNewTime = (appointmentId: string) => {
+    console.log('Propose new time for appointment:', appointmentId);
+    toast({ title: 'Propose new time feature coming soon!' });
+  };
+
+  const formatStatus = (status: string) => {
+    const statusMap: Record<string, string> = {
+      'waiting_for_vet': 'Waiting for vet',
+      'accepted': 'Accepted',
+      'confirmed': 'Confirmed',
+      'completed': 'Completed',
+      'cancelled': 'Cancelled',
+      'rejected': 'Rejected',
+      'pending': 'Pending',
+      'proposed_time': 'Time proposed'
+    };
+    return statusMap[status] || status;
+  };
+
   const fetchAppointments = useCallback(async () => {
-    if (!userId || !userRole) return;
+    console.log('fetchAppointments called', { userId, userRole });
+    if (!userId || !userRole) {
+      console.log('Missing userId or userRole');
+      return;
+    }
     setLoading(true);
     try {
       if (userRole === 'vet') {
-        const { data, error } = await supabase
+        const { data: withPets, error: petsError } = await supabase
           .from('appointments')
-          .select('*')
+          .select(`
+            *,
+            pets (
+              id, name, type, breed, image
+            ),
+            pet_owner:users!appointments_pet_owner_id_fkey (
+              id, first_name, last_name, email
+            ),
+            vet:users!appointments_vet_id_fkey (
+              id, first_name, last_name, email
+            )
+          `)
           .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
           .order('created_at', { ascending: false });
-        if (error) return;
-        setAppointments(data || []);
+        console.log('Query completed:', { data: withPets, error: petsError });
+        if (petsError) return setAppointments([]);
+        setAppointments(withPets || []);
+        return;
       } else {
         const { data, error } = await supabase
           .from('appointments')
-          .select('*')
+          .select(`
+            *,
+            pets (
+              id, name, type, breed, image
+            ),
+            pet_owner:users!appointments_pet_owner_id_fkey (
+              id, first_name, last_name, email
+            ),
+            vet:users!appointments_vet_id_fkey (
+              id, first_name, last_name, email
+            )
+          `)
           .eq('pet_owner_id', userId)
           .order('created_at', { ascending: false });
-        if (error) return;
+        console.log('Query completed:', { data, error });
+        if (error) return setAppointments([]);
         setAppointments(data || []);
       }
     } finally {
@@ -150,79 +235,108 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   // Reusable appointment card component
   const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => (
     <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-lg font-semibold">
-            {formatDate(appointment.date)}
-          </h3>
-          <p className="text-gray-600">
-            {appointment.time_slot || appointment.time || appointment.time_of_day}
-          </p>
-        </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appointment.status)}`}>
-          {appointment.status}
-        </span>
-      </div>
-      
-      <div className="space-y-2">
-        {appointment.pets && (
-          <p className="text-gray-700">
-            <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
-          </p>
-        )}
-        
-        {appointment.vet && userRole === 'pet_owner' && (
-          <p className="text-gray-700">
-            <span className="font-medium">Vet:</span> Dr. {appointment.vet.first_name} {appointment.vet.last_name}
-          </p>
-        )}
-        
-        {appointment.address && (
-          <p className="text-gray-700">
-            <span className="font-medium">Location:</span> {appointment.address}
-          </p>
-        )}
-        
-        {appointment.services && (
-          <div className="text-gray-700">
-            <span className="font-medium">Services:</span>
-            <ul className="ml-5 mt-1 list-disc">
-              {Array.isArray(appointment.services) 
-                ? appointment.services.map((service: any, index: number) => (
-                    <li key={index}>{service.name || service}</li>
-                  ))
-                : <li>{String(appointment.services)}</li>
-              }
-            </ul>
+      <div className="flex gap-4">
+        {appointment.pets?.image && (
+          <div className="flex-shrink-0">
+            <img 
+              src={appointment.pets.image} 
+              alt={appointment.pets.name || 'Pet'} 
+              className="w-16 h-16 rounded-full object-cover"
+            />
           </div>
         )}
-        
-        {appointment.total_price && (
-          <p className="text-gray-700">
-            <span className="font-medium">Total:</span> ${appointment.total_price}
-          </p>
-        )}
-        
-        {appointment.notes && (
-          <p className="text-gray-700">
-            <span className="font-medium">Notes:</span> {appointment.notes}
-          </p>
-        )}
-      </div>
-      
-      <div className="mt-4 pt-4 border-t flex justify-between items-center">
-        <p className="text-sm text-gray-500">
-          Booking ID: {appointment.id.slice(0, 8)}
-        </p>
-        
-        {appointment.status === 'pending' && userRole === 'pet_owner' && (
-          <button 
-            className="text-red-600 hover:text-red-800 text-sm font-medium"
-            onClick={() => {/* Add cancel functionality */}}
-          >
-            Cancel Appointment
-          </button>
-        )}
+        <div className="flex-1">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h3 className="text-lg font-semibold">
+                {formatDate(appointment.date)}
+              </h3>
+              <p className="text-gray-600">
+                {appointment.time_slot || appointment.time || appointment.time_of_day}
+              </p>
+            </div>
+            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
+              {formatStatus(appointment.status)}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {appointment.pets && (
+              <p className="text-gray-700">
+                <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
+              </p>
+            )}
+            {appointment.vet && userRole === 'pet_owner' && (
+              <p className="text-gray-700">
+                <span className="font-medium">Vet:</span> Dr. {appointment.vet.first_name} {appointment.vet.last_name}
+              </p>
+            )}
+            {appointment.address && (
+              <p className="text-gray-700">
+                <span className="font-medium">Location:</span> {appointment.address}
+              </p>
+            )}
+            {appointment.services && (
+              <div className="text-gray-700">
+                <span className="font-medium">Services:</span>
+                <ul className="ml-5 mt-1 list-disc">
+                  {Array.isArray(appointment.services) 
+                    ? appointment.services.map((service: any, index: number) => (
+                        <li key={index}>{service.name || service}</li>
+                      ))
+                    : <li>{String(appointment.services)}</li>
+                  }
+                </ul>
+              </div>
+            )}
+            {appointment.total_price && (
+              <p className="text-gray-700">
+                <span className="font-medium">Total:</span> ${appointment.total_price}
+              </p>
+            )}
+            {appointment.notes && (
+              <p className="text-gray-700">
+                <span className="font-medium">Notes:</span> {appointment.notes}
+              </p>
+            )}
+          </div>
+          <div className="mt-4 pt-4 border-t flex justify-between items-center">
+            <p className="text-sm text-gray-500">
+              Booking ID: {appointment.id.slice(0, 8)}
+            </p>
+            {appointment.status === 'pending' && userRole === 'pet_owner' && (
+              <button 
+                className="text-red-600 hover:text-red-800 text-sm font-medium"
+                onClick={() => {/* Add cancel functionality */}}
+              >
+                Cancel Appointment
+              </button>
+            )}
+          </div>
+          {/* Vet action buttons */}
+          {userRole === 'vet' && appointment.status === 'waiting_for_vet' && (
+            <div className="flex gap-2 mt-4 pt-4 border-t">
+              <Button 
+                onClick={() => handleAcceptJob(appointment.id)}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Accept Job
+              </Button>
+              <Button 
+                onClick={() => handleDeclineJob(appointment.id)}
+                variant="outline"
+                className="border-red-500 text-red-500 hover:bg-red-50"
+              >
+                Decline
+              </Button>
+              <Button 
+                onClick={() => handleProposeNewTime(appointment.id)}
+                variant="outline"
+              >
+                Propose New Time
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
