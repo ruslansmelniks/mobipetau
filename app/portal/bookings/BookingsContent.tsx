@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/supabase'
 import { Calendar } from 'lucide-react'
@@ -55,107 +55,114 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
   };
 
-  useEffect(() => {
-    if (fetchingRef.current) return
-    
-    const fetchAppointments = async () => {
-      if (!userId || !userRole) return;
+  const supabase = createClient();
+
+  // Test function to create a sample appointment
+  const createTestAppointment = async () => {
+    try {
+      console.log('Creating test appointment...');
+      const { data, error } = await supabase
+        .from('appointments')
+        .insert({
+          pet_owner_id: userId,
+          status: 'waiting_for_vet',
+          date: new Date().toISOString().split('T')[0],
+          time_slot: '09:00',
+          address: 'Test Address',
+          notes: 'Test appointment'
+        })
+        .select();
       
-      setLoading(true);
-      console.log('Fetching appointments for:', { userId, userRole });
+      console.log('Test appointment result:', { data, error });
+    } catch (error) {
+      console.error('Error creating test appointment:', error);
+    }
+  };
+
+  const fetchAppointments = useCallback(async () => {
+    if (!userId || !userRole) return;
+
+    setLoading(true);
+    console.log('Fetching appointments for:', { userId, userRole });
+    console.log('Supabase client exists?', !!supabase);
+    console.log('Supabase type:', typeof supabase);
+    console.log('Supabase client:', supabase);
+
+    try {
+      // Test simple query first
+      console.log('Testing simple query...');
+      const { data: testData, error: testError } = await supabase
+        .from('appointments')
+        .select('*')
+        .limit(1);
       
-      try {
-        const supabase = createClient()
+      console.log('Test query result:', { testData, testError });
+      console.log('Test data length:', testData?.length || 0);
+
+      if (userRole === 'vet') {
+        console.log('Vet query: fetching appointments where vet_id =', userId, 'OR status = waiting_for_vet');
         
-        // Temporary debug: Check if supabase client exists
-        console.log('Supabase client exists?', !!supabase);
-        console.log('Supabase type:', typeof supabase);
-        console.log('Supabase client:', supabase);
-        
-        // Add a simple test query right here
-        try {
-          console.log('Testing simple query...');
-          const { data: testData, error: testError } = await supabase
-            .from('appointments')
-            .select('id, status')
-            .eq('status', 'waiting_for_vet')
-            .limit(5);
-          
-          console.log('Test query result:', { testData, testError });
-        } catch (e) {
-          console.error('Test query failed:', e);
-        }
-        
-        let query = supabase
+        // First, let's check what statuses exist in the database
+        const { data: statusData, error: statusError } = await supabase
           .from('appointments')
-          .select(`
-            *,
-            pets (
-              id,
-              name,
-              type,
-              breed,
-              owner_id
-            )
-          `);
+          .select('status')
+          .limit(10);
+        
+        console.log('Available statuses:', statusData?.map(a => a.status) || []);
+        console.log('Status query error:', statusError);
 
-        if (userRole === 'vet') {
-          // For vets: get appointments assigned to them OR waiting for any vet
-          console.log('Vet query: fetching appointments where vet_id =', userId, 'OR status = waiting_for_vet');
-          query = query.or(`vet_id.eq.${userId},status.eq.waiting_for_vet`);
-        } else {
-          // For pet owners: use pet_owner_id directly from appointments table
-          console.log('Pet owner query: fetching appointments where pet_owner_id =', userId);
-          query = query.eq('pet_owner_id', userId);
-        }
-
-        query = query.order('created_at', { ascending: false });
+        // Check if there are any appointments at all
+        const { data: allAppointments, error: allError } = await supabase
+          .from('appointments')
+          .select('*')
+          .limit(5);
+        
+        console.log('All appointments sample:', allAppointments?.map(a => ({ id: a.id, status: a.status, vet_id: a.vet_id, pet_owner_id: a.pet_owner_id })) || []);
+        console.log('All appointments error:', allError);
 
         console.log('Executing query...');
-        const { data, error } = await query;
-        
-        console.log('Query result:', { data, error, dataLength: data?.length });
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
+          .order('created_at', { ascending: false });
+
+        console.log('Query result:', { data, error, dataLength: data?.length || 0 });
         
         if (error) {
           console.error('Error fetching appointments:', error);
           return;
         }
 
-        // Now fetch pet owner details for the appointments
-        if (data && data.length > 0 && userRole === 'vet') {
-          const ownerIds = [...new Set(data.map(apt => apt.pet_owner_id).filter(Boolean))];
-          
-          const { data: owners } = await supabase
-            .from('users')
-            .select('id, first_name, last_name, email, phone')
-            .in('id', ownerIds);
-          
-          // Map owner data to appointments
-          const appointmentsWithOwners = data.map(apt => ({
-            ...apt,
-            pet_owner: owners?.find(owner => owner.id === apt.pet_owner_id) || null
-          }));
-          
-          setAppointments(appointmentsWithOwners);
-          console.log('Set appointments with owners:', appointmentsWithOwners.length);
-        } else {
-          setAppointments(data || []);
-          console.log('Set appointments:', data?.length || 0);
-        }
-        
-        // Log filtered results for current tab
-        const filtered = getFilteredAppointments();
-        console.log('Filtered appointments for', activeTab, ':', filtered.length);
-        
-      } catch (error) {
-        console.error('Error in fetchAppointments:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+        setAppointments(data || []);
+        console.log('Set appointments:', data?.length || 0);
+      } else {
+        // Pet owner query
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('pet_owner_id', userId)
+          .order('created_at', { ascending: false });
 
+        if (error) {
+          console.error('Error fetching appointments:', error);
+          return;
+        }
+
+        setAppointments(data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchAppointments:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, userRole, supabase]);
+
+  useEffect(() => {
+    if (fetchingRef.current) return
+    
     fetchAppointments()
-  }, [userId, userRole])
+  }, [userId, userRole, fetchAppointments])
 
   if (loading) {
     return (
@@ -294,62 +301,75 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   )
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-3 mb-6">
-        <TabsTrigger value="incoming">
-          {userRole === 'vet' ? 'Available Jobs' : 'Incoming'}
-        </TabsTrigger>
-        <TabsTrigger value="ongoing">
-          {userRole === 'vet' ? 'Active Jobs' : 'Ongoing'}
-        </TabsTrigger>
-        <TabsTrigger value="past">
-          {userRole === 'vet' ? 'Completed Jobs' : 'Past'}
-        </TabsTrigger>
-      </TabsList>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">
+          {userRole === 'vet' ? 'My Jobs' : 'My Bookings'}
+        </h1>
+        <button
+          onClick={createTestAppointment}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Create Test Appointment
+        </button>
+      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="incoming">
+            {userRole === 'vet' ? 'Available Jobs' : 'Incoming'}
+          </TabsTrigger>
+          <TabsTrigger value="ongoing">
+            {userRole === 'vet' ? 'Active Jobs' : 'Ongoing'}
+          </TabsTrigger>
+          <TabsTrigger value="past">
+            {userRole === 'vet' ? 'Completed Jobs' : 'Past'}
+          </TabsTrigger>
+        </TabsList>
 
-      {['incoming', 'ongoing', 'past'].map((tab) => (
-        <TabsContent key={tab} value={tab} className="space-y-4">
-          {filteredAppointments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <div className="mb-6">
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full">
-                  <Calendar className="w-10 h-10 text-primary" />
+        {['incoming', 'ongoing', 'past'].map((tab) => (
+          <TabsContent key={tab} value={tab} className="space-y-4">
+            {filteredAppointments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="mb-6">
+                  <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full">
+                    <Calendar className="w-10 h-10 text-primary" />
+                  </div>
                 </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  {tab === 'incoming' && (userRole === 'vet' ? 'No available jobs' : 'No incoming appointments')}
+                  {tab === 'ongoing' && (userRole === 'vet' ? 'No active jobs' : 'No ongoing appointments')}
+                  {tab === 'past' && (userRole === 'vet' ? 'No completed jobs' : 'No past appointments')}
+                </h3>
+                <p className="text-gray-600 mb-6 text-center max-w-sm">
+                  {tab === 'incoming' && (userRole === 'pet_owner' 
+                    ? 'You have no pending or requested appointments'
+                    : 'You have no available job requests at the moment'
+                  )}
+                  {tab === 'ongoing' && (userRole === 'pet_owner' 
+                    ? 'You have no confirmed appointments'
+                    : 'You have no active jobs in progress'
+                  )}
+                  {tab === 'past' && (userRole === 'pet_owner' 
+                    ? 'You have no completed or cancelled appointments'
+                    : 'You have no completed jobs in your history'
+                  )}
+                </p>
+                {tab === 'incoming' && userRole === 'pet_owner' && (
+                  <Link href="/book">
+                    <Button className="bg-primary hover:bg-primary/90 text-white">
+                      Book appointment
+                    </Button>
+                  </Link>
+                )}
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {tab === 'incoming' && (userRole === 'vet' ? 'No available jobs' : 'No incoming appointments')}
-                {tab === 'ongoing' && (userRole === 'vet' ? 'No active jobs' : 'No ongoing appointments')}
-                {tab === 'past' && (userRole === 'vet' ? 'No completed jobs' : 'No past appointments')}
-              </h3>
-              <p className="text-gray-600 mb-6 text-center max-w-sm">
-                {tab === 'incoming' && (userRole === 'pet_owner' 
-                  ? 'You have no pending or requested appointments'
-                  : 'You have no available job requests at the moment'
-                )}
-                {tab === 'ongoing' && (userRole === 'pet_owner' 
-                  ? 'You have no confirmed appointments'
-                  : 'You have no active jobs in progress'
-                )}
-                {tab === 'past' && (userRole === 'pet_owner' 
-                  ? 'You have no completed or cancelled appointments'
-                  : 'You have no completed jobs in your history'
-                )}
-              </p>
-              {tab === 'incoming' && userRole === 'pet_owner' && (
-                <Link href="/book">
-                  <Button className="bg-primary hover:bg-primary/90 text-white">
-                    Book appointment
-                  </Button>
-                </Link>
-              )}
-            </div>
-          ) : (
-            filteredAppointments.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
-            ))
-          )}
-        </TabsContent>
-      ))}
-    </Tabs>
+            ) : (
+              filteredAppointments.map((appointment) => (
+                <AppointmentCard key={appointment.id} appointment={appointment} />
+              ))
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
   )
 } 
