@@ -64,9 +64,10 @@ interface Notification {
   type: string;
   message: string;
   created_at: string;
-  is_read: boolean;  // Changed from seen
+  is_read: boolean;
+  read?: boolean;
   appointment_id?: string;
-  appointment_details?: {  // Changed from appointment
+  appointment_details?: {
     id: string;
     date: string;
     time_slot: string;
@@ -74,7 +75,7 @@ interface Notification {
     pet_owner_name: string;
     pet_name: string;
   };
-  title?: string;  // Add this since it exists in the table
+  title?: string;
 }
 
 interface DatabaseAppointment {
@@ -141,7 +142,7 @@ export function NotificationBell() {
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('read', false)
+          .or('is_read.eq.false,read.eq.false');
 
         if (error) {
           console.error('Notifications check error:', error)
@@ -216,7 +217,7 @@ export function NotificationBell() {
         console.log('Setting notifications:', rpcData);
         console.log('Notifications is_read values:', rpcData.map((n: any) => ({ id: n.id, is_read: n.is_read })));
         setNotifications(rpcData);
-        setUnreadCount(rpcData.filter(n => !n.is_read).length);
+        setUnreadCount(rpcData.filter((n: any) => !n.is_read && !n.read).length);
       } else {
         console.error('RPC failed:', rpcError);
         setNotifications([]);
@@ -344,129 +345,103 @@ export function NotificationBell() {
           })
         : 'No date';
       const time = notification.appointment_details.time_slot || 'No time';
-      
       return `New appointment for ${petName} from ${ownerName}`;
     }
     return notification.message;
   };
 
-  const formatNotificationDetails = (notification: any) => {
-    if (notification.appointment_details) {
-      const date = notification.appointment_details.date 
-        ? new Date(notification.appointment_details.date).toLocaleDateString('en-US', { 
-            day: '2-digit', 
-            month: 'short', 
-            year: 'numeric' 
-          })
-        : 'No date';
-      const time = notification.appointment_details.time_slot || 'No time';
-      
-      return `${date} at ${time}`;
-    }
-    return '';
-  };
-
   // Don't render if notifications are disabled
   if (!isEnabled || !user) {
-    return null
+    return null;
   }
 
-  console.log('Rendering NotificationBell, notifications:', notifications);
-  console.log('Loading state:', loading);
-
   return (
-    <>
-      {/* Temporary debug indicator */}
-      <div style={{ 
-        position: "absolute", 
-        top: 0, 
-        right: 0, 
-        background: "red", 
-        color: "white", 
-        padding: "2px 4px", 
-        fontSize: "10px", 
-        zIndex: 9999,
-        borderRadius: "2px"
-      }}>
-        ENHANCED BELL
-      </div>
-      
-      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
+    <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className="relative h-8 w-8 rounded-full"
+        >
+          <span className="sr-only">View notifications</span>
+          <Bell className="h-4 w-4" />
+          {unreadCount > 0 && (
+            <span className="absolute right-0 top-0 block h-3 w-3 rounded-full ring-2 ring-white bg-red-500" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-full border-none">
+        <DropdownMenuLabel>
+          <div className="flex items-center">
+            <Bell className="mr-2 h-4 w-4 text-primary" />
+            <h4 className="font-semibold">Notifications</h4>
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
+              <div className="ml-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs text-white">
+                {unreadCount}
+              </div>
             )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-96 max-h-[80vh] overflow-y-auto">
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {notifications.length === 0 ? (
-            <DropdownMenuItem disabled>No notifications</DropdownMenuItem>
-          ) : (
-            notifications.map(n => (
-              <div key={n.id} className="p-3 border-b last:border-b-0">
-                <div className="space-y-2">
-                  <div className="font-semibold text-sm">
-                    {n.message}
-                  </div>
-                  
-                  {n.appointment_details && (
-                    <>
-                      <div className="text-xs text-gray-600">
-                        {n.appointment_details.date ? new Date(n.appointment_details.date).toLocaleDateString('en-US', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        }) : 'No date'} at {n.appointment_details.time_slot || 'No time'}
-                      </div>
-                      
-                      {/* Quick actions for vets */}
-                      <div className="flex gap-2 pt-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleAcceptJob(n.appointment_details!.id)}
-                          disabled={loadingActions[n.appointment_details!.id] === 'accept'}
-                          className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7"
-                        >
-                          {loadingActions[n.appointment_details!.id] === 'accept' ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Check className="h-3 w-3" />
-                          )}
-                          Accept
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeclineJob(n.appointment_details!.id)}
-                          disabled={loadingActions[n.appointment_details!.id] === 'decline'}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs px-2 py-1 h-7"
-                        >
-                          {loadingActions[n.appointment_details!.id] === 'decline' ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <X className="h-3 w-3" />
-                          )}
-                          Decline
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                  
-                  <div className="text-xs text-gray-500">
-                    {new Date(n.created_at).toLocaleString()}
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {loading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : notifications.length === 0 ? (
+          <DropdownMenuItem>
+            <X className="mr-2 h-4 w-4" />
+            No new notifications.
+          </DropdownMenuItem>
+        ) : (
+          <div className="max-h-80 overflow-y-auto">
+            {notifications.map((notification) => (
+              <DropdownMenuItem
+                key={notification.id}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center">
+                  <Bell className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <p className="text-sm font-medium">{notification.title || formatNotificationMessage(notification)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {notification.appointment_details?.date || notification.created_at}
+                    </p>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  )
-} 
+                {notification.appointment_id && (
+                  <div className="ml-auto flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAcceptJob(notification.appointment_id as string)}
+                      disabled={loadingActions[notification.appointment_id as string] === 'accept'}
+                    >
+                      {loadingActions[notification.appointment_id as string] === 'accept' ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="mr-2 h-4 w-4" />
+                      )}
+                      Accept
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeclineJob(notification.appointment_id as string)}
+                      disabled={loadingActions[notification.appointment_id as string] === 'decline'}
+                    >
+                      {loadingActions[notification.appointment_id as string] === 'decline' ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <X className="mr-2 h-4 w-4" />
+                      )}
+                      Decline
+                    </Button>
+                  </div>
+                )}
+              </DropdownMenuItem>
+            ))}
+          </div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

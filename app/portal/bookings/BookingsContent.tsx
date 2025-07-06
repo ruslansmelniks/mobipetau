@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/hooks/use-toast';
+import { ProposeTimeModal } from '@/components/propose-time-modal'
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -24,6 +25,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('incoming')
   const fetchingRef = useRef(false)
+  const [proposeModalOpen, setProposeModalOpen] = useState(false)
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithDetails | null>(null)
+  const [proposals, setProposals] = useState<any[]>([])
+  const [proposalsLoading, setProposalsLoading] = useState(false)
+  const [proposalsError, setProposalsError] = useState<string | null>(null)
+  const [respondingProposalId, setRespondingProposalId] = useState<string | null>(null)
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
   const getFilteredAppointments = () => {
@@ -169,6 +176,82 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
       setLoading(false);
     }
   }, [userId, userRole, supabase]);
+
+  const fetchProposals = useCallback(async (appointmentId: string) => {
+    setProposalsLoading(true)
+    setProposalsError(null)
+    try {
+      const res = await fetch(`/api/time-proposals?appointmentId=${appointmentId}`)
+      const json = await res.json()
+      if (res.ok) {
+        setProposals(json.proposals || [])
+      } else {
+        setProposals([])
+        setProposalsError(json.error || 'Failed to fetch proposals')
+      }
+    } catch (err) {
+      setProposals([])
+      setProposalsError('Failed to fetch proposals')
+    } finally {
+      setProposalsLoading(false)
+    }
+  }, [])
+
+  const openProposeModal = (appointment: AppointmentWithDetails) => {
+    setSelectedAppointment(appointment)
+    setProposeModalOpen(true)
+  }
+  const closeProposeModal = () => {
+    setProposeModalOpen(false)
+    setSelectedAppointment(null)
+  }
+  const handleProposeSubmit = async (proposalData: any) => {
+    if (!selectedAppointment) return
+    try {
+      const res = await fetch('/api/time-proposals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: selectedAppointment.id,
+          ...proposalData
+        })
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error || 'Failed to propose time')
+      }
+      toast({ title: 'Proposal sent!' })
+      closeProposeModal()
+      await fetchAppointments()
+    } catch (err: any) {
+      toast({ title: 'Failed to send proposal', description: err.message })
+    }
+  }
+  const handleViewProposals = async (appointment: AppointmentWithDetails) => {
+    setSelectedAppointment(appointment)
+    await fetchProposals(appointment.id)
+  }
+  const handleRespondProposal = async (proposalId: string, status: 'accepted' | 'declined') => {
+    setRespondingProposalId(proposalId)
+    try {
+      const res = await fetch(`/api/time-proposals/${proposalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error || 'Failed to respond')
+      }
+      toast({ title: status === 'accepted' ? 'Proposal accepted!' : 'Proposal declined!' })
+      await fetchAppointments()
+      await fetchProposals(selectedAppointment?.id || '')
+    } catch (err: any) {
+      toast({ title: 'Failed to respond', description: err.message })
+    } finally {
+      setRespondingProposalId(null)
+    }
+  }
 
   useEffect(() => {
     if (fetchingRef.current) return
@@ -329,15 +412,82 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 Decline
               </Button>
               <Button 
-                onClick={() => handleProposeNewTime(appointment.id)}
+                onClick={() => openProposeModal(appointment)}
                 variant="outline"
               >
                 Propose New Time
               </Button>
             </div>
           )}
+          {/* Pet owner: view proposals if any exist */}
+          {userRole === 'pet_owner' && (
+            <div className="flex gap-2 mt-4 pt-4 border-t">
+              <Button 
+                onClick={() => handleViewProposals(appointment)}
+                variant="outline"
+              >
+                View Time Proposals
+              </Button>
+            </div>
+          )}
+          {/* Show proposals modal for pet owner */}
+          {selectedAppointment && selectedAppointment.id === appointment.id && proposals.length > 0 && userRole === 'pet_owner' && (
+            <div className="mt-4">
+              <h4 className="font-medium mb-2">Time Proposals</h4>
+              {proposalsLoading ? (
+                <div>Loading proposals...</div>
+              ) : proposalsError ? (
+                <div className="text-red-600">{proposalsError}</div>
+              ) : (
+                <div className="space-y-2">
+                  {proposals.map((proposal) => (
+                    <div key={proposal.id} className="border rounded p-3 bg-gray-50 flex flex-col md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div><span className="font-medium">Date:</span> {proposal.proposed_date}</div>
+                        <div><span className="font-medium">Time Range:</span> {proposal.proposed_time_range}</div>
+                        {proposal.proposed_exact_time && <div><span className="font-medium">Exact Time:</span> {proposal.proposed_exact_time}</div>}
+                        {proposal.message && <div><span className="font-medium">Message:</span> {proposal.message}</div>}
+                        <div><span className="font-medium">Status:</span> {proposal.status}</div>
+                      </div>
+                      {proposal.status === 'pending' && (
+                        <div className="flex gap-2 mt-2 md:mt-0">
+                          <Button size="sm" onClick={() => handleRespondProposal(proposal.id, 'accepted')} disabled={respondingProposalId === proposal.id}>
+                            {respondingProposalId === proposal.id ? 'Accepting...' : 'Accept'}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleRespondProposal(proposal.id, 'declined')} disabled={respondingProposalId === proposal.id}>
+                            {respondingProposalId === proposal.id ? 'Declining...' : 'Decline'}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+      {/* Propose Time Modal for vet */}
+      {proposeModalOpen && selectedAppointment && selectedAppointment.id === appointment.id && (
+        <ProposeTimeModal
+          isOpen={proposeModalOpen}
+          onClose={closeProposeModal}
+          appointment={{
+            id: appointment.id,
+            date: appointment.date || '',
+            time: appointment.time || '',
+            time_of_day: appointment.time_of_day || '',
+            address: appointment.address || '',
+            notes: appointment.notes || '',
+            pets: appointment.pets,
+            users: userRole === 'pet_owner' && appointment.vet ? {
+              first_name: appointment.vet.first_name || '',
+              last_name: appointment.vet.last_name || ''
+            } : undefined
+          }}
+          onSubmit={handleProposeSubmit}
+        />
+      )}
     </div>
   )
 
