@@ -17,6 +17,7 @@ type User = Database['public']['Tables']['users']['Row']
 interface AppointmentWithDetails extends Appointment {
   pets?: Pet
   vet?: Pick<User, 'id' | 'first_name' | 'last_name'>
+  userProposal?: any // <-- add this line
 }
 
 export default function BookingsContent({ userId, userRole }: { userId: string, userRole: string }) {
@@ -31,9 +32,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [proposalsLoading, setProposalsLoading] = useState(false)
   const [proposalsError, setProposalsError] = useState<string | null>(null)
   const [respondingProposalId, setRespondingProposalId] = useState<string | null>(null)
+  const [userProposals, setUserProposals] = useState<any[]>([])
+  const [appointmentsWithProposals, setAppointmentsWithProposals] = useState<AppointmentWithDetails[]>([])
+  const [showProposeModal, setShowProposeModal] = useState(false);
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
-  const getFilteredAppointments = () => {
+  const getFilteredAppointments = (appointments: AppointmentWithDetails[]) => {
     const isVet = userRole === 'vet';
     
     switch (activeTab) {
@@ -63,49 +67,91 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
   };
 
+  // Helper to format proposed time
+  const formatProposedTime = (proposal: any) => {
+    if (!proposal) return '';
+    let timeString = `${proposal.proposed_date} - ${proposal.proposed_time_range}`;
+    if (proposal.proposed_exact_time) {
+      timeString += ` at ${proposal.proposed_exact_time}`;
+    }
+    return timeString;
+  };
+
   const supabase = createClient();
 
   // Handler functions for vet actions
   const handleAcceptJob = async (appointmentId: string) => {
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ 
-          status: 'accepted',
-          vet_id: userId,
-          accepted_at: new Date().toISOString()
-        })
-        .eq('id', appointmentId);
-      if (error) throw error;
-      await fetchAppointments();
-      toast({ title: 'Job accepted successfully!' });
+      const response = await fetch('/api/vet/appointment-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, action: 'accept' })
+      });
+      if (response.ok) {
+        window.location.reload();
+      }
     } catch (error) {
       console.error('Error accepting job:', error);
-      toast({ title: 'Failed to accept job', description: String(error), });
     }
   };
-
-  const handleDeclineJob = async (appointmentId: string) => {
+  const handleDecline = async (appointmentId: string) => {
     try {
-      const { error: declineError } = await supabase
-        .from('declined_jobs')
-        .insert({ 
-          vet_id: userId,
-          appointment_id: appointmentId,
-          declined_at: new Date().toISOString()
-        });
-      if (declineError) throw declineError;
-      await fetchAppointments();
-      toast({ title: 'Job declined' });
+      const response = await fetch('/api/vet/appointment-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, action: 'decline' })
+      });
+      if (response.ok) {
+        window.location.reload();
+      }
     } catch (error) {
       console.error('Error declining job:', error);
-      toast({ title: 'Failed to decline job', description: String(error), });
     }
   };
-
-  const handleProposeNewTime = (appointmentId: string) => {
-    console.log('Propose new time for appointment:', appointmentId);
-    toast({ title: 'Propose new time feature coming soon!' });
+  const handleProposeNewTime = (appointment: any) => {
+    setSelectedAppointment(appointment);
+    setShowProposeModal(true);
+  };
+  const handleProposeTime = async (proposalData: {
+    proposedDate: string
+    proposedTimeRange: string
+    proposedExactTime?: string
+    message?: string
+  }) => {
+    console.log('Submitting proposal with data:', proposalData);
+    console.log('Selected appointment:', selectedAppointment);
+    try {
+      if (!selectedAppointment) {
+        alert('No appointment selected');
+        return;
+      }
+      const response = await fetch('/api/time-proposals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          appointmentId: selectedAppointment.id,
+          proposedDate: proposalData.proposedDate,
+          proposedTimeRange: proposalData.proposedTimeRange,
+          proposedExactTime: proposalData.proposedExactTime,
+          message: proposalData.message,
+        }),
+      });
+      console.log('Response status:', response.status);
+      const responseData = await response.json();
+      console.log('Response data:', responseData);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}, message: ${responseData.error || 'Unknown error'}`);
+      }
+      console.log('Proposal submitted successfully');
+      setShowProposeModal(false);
+      setSelectedAppointment(null);
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error submitting proposal:', error);
+      alert(`Failed to submit proposal: ${error.message}`);
+    }
   };
 
   const formatStatus = (status: string) => {
@@ -123,42 +169,78 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   };
 
   const fetchAppointments = useCallback(async () => {
-    console.log('fetchAppointments called', { userId, userRole });
-    if (!userId || !userRole) {
-      console.log('Missing userId or userRole');
-      return;
-    }
     setLoading(true);
     try {
+      // Step 1: Debug query to log all appointment statuses
+      const { data: allStatuses } = await supabase
+        .from('appointments')
+        .select('status, id')
+        .limit(10);
+      console.log('All appointment statuses in database:', allStatuses);
+      // Fetch appointments as before
+      let apptData: any[] = [];
+      let error: any = null;
       if (userRole === 'vet') {
         const { data: withPets, error: petsError } = await supabase
           .from('appointments')
           .select(`
             *,
-            pets:pet_id(id, name, type, breed, image),
-            pet_owner:pet_owner_id(id, first_name, last_name, email, phone)
+            pets!appointments_pet_id_fkey(id, name, type, breed, image),
+            users!appointments_pet_owner_id_fkey(id, first_name, last_name, email, phone)
           `)
-          .or(`vet_id.eq.${userId},status.eq.waiting_for_vet`)
+          // .eq('status', 'requested') // Commented out
+          .is('vet_id', null) // Only show jobs without a vet assigned
           .order('created_at', { ascending: false });
-        console.log('Query completed:', { data: withPets, error: petsError });
-        if (typeof window !== 'undefined' && (window as any).__APPT_DEBUG && (window as any).logAppointments) (window as any).logAppointments(withPets);
-        if (petsError) return setAppointments([]);
-        setAppointments(withPets || []);
-        return;
+        apptData = withPets || [];
+        error = petsError;
       } else {
-        const { data, error } = await supabase
+        const { data, error: err } = await supabase
           .from('appointments')
           .select(`
             *,
-            pets:pet_id(id, name, type, breed, image),
-            pet_owner:pet_owner_id(id, first_name, last_name, email, phone)
+            pets!appointments_pet_id_fkey(id, name, type, breed, image),
+            users!appointments_pet_owner_id_fkey(id, first_name, last_name, email, phone)
           `)
           .eq('pet_owner_id', userId)
           .order('created_at', { ascending: false });
-        console.log('Query completed:', { data, error });
-        if (typeof window !== 'undefined' && (window as any).__APPT_DEBUG && (window as any).logAppointments) (window as any).logAppointments(data);
-        if (error) return setAppointments([]);
-        setAppointments(data || []);
+        apptData = data || [];
+        error = err;
+      }
+      setAppointments(apptData);
+      console.log('Raw appointments from database:', apptData);
+      console.log('Appointments error:', error);
+      // Fetch proposals for current vet
+      if (userRole === 'vet') {
+        const { data: proposals, error: proposalsError } = await supabase
+          .from('time_proposals')
+          .select('*')
+          .eq('vet_id', userId);
+        setUserProposals(proposals || []);
+        console.log('User proposals from database:', proposals);
+        console.log('Proposals error:', proposalsError);
+        // After fetching appointments and proposals, fix the merging:
+        const mergeProposals = (appointments: any[], userProposals: any[], userId: string) => {
+          return appointments?.map(apt => {
+            const userProposalsForThisAppt = userProposals?.filter(p => 
+              p.appointment_id === apt.id && p.vet_id === userId
+            );
+            const latestUserProposal = userProposalsForThisAppt?.length > 0 
+              ? userProposalsForThisAppt.sort((a, b) => 
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )[0]
+              : null;
+            console.log(`Appointment ${apt.id} - Latest proposal:`, latestUserProposal);
+            return {
+              ...apt,
+              userProposal: latestUserProposal
+            };
+          });
+        };
+        const merged = mergeProposals(apptData, proposals || [], userId);
+        console.log('Final merged appointments with proposals:', merged);
+        setAppointmentsWithProposals(merged);
+      } else {
+        setAppointmentsWithProposals(apptData);
       }
     } finally {
       setLoading(false);
@@ -241,6 +323,25 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
   }
 
+  // Add withdraw proposal handler
+  const handleWithdrawProposal = async (proposalId: string) => {
+    const confirmed = window.confirm('Are you sure you want to withdraw your time proposal? This action cannot be undone.');
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`/api/time-proposals/${proposalId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to withdraw proposal');
+      }
+      window.location.reload();
+    } catch (error: any) {
+      alert(`Failed to withdraw proposal: ${error.message}`);
+    }
+  };
+
   useEffect(() => {
     if (fetchingRef.current) return
     
@@ -301,183 +402,216 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
 
 
-  const filteredAppointments = getFilteredAppointments()
+  const filteredAppointments = userRole === 'vet' ? getFilteredAppointments(appointmentsWithProposals) : getFilteredAppointments(appointments);
 
   // Reusable appointment card component
-  const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => (
-    <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
-      <div className="flex gap-4">
-        {appointment.pets?.image && (
-          <div className="flex-shrink-0">
-            <img 
-              src={appointment.pets.image} 
-              alt={appointment.pets.name || 'Pet'} 
-              className="w-16 h-16 rounded-full object-cover"
-            />
-          </div>
-        )}
-        <div className="flex-1">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h3 className="text-lg font-semibold">
-                {formatDate(appointment.date)}
-              </h3>
-              <p className="text-gray-600">
-                {appointment.time_slot || appointment.time || appointment.time_of_day}
-              </p>
+  const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => {
+    console.log('Appointment with proposal data:', appointment);
+    console.log('User proposal for this appointment:', appointment.userProposal);
+    return (
+      <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex gap-4">
+          {appointment.pets?.image && (
+            <div className="flex-shrink-0">
+              <img 
+                src={appointment.pets.image} 
+                alt={appointment.pets.name || 'Pet'} 
+                className="w-16 h-16 rounded-full object-cover"
+              />
             </div>
-            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
-              {formatStatus(appointment.status)}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {appointment.pets && (
-              <p className="text-gray-700">
-                <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
-              </p>
-            )}
-            {appointment.vet && userRole === 'pet_owner' && (
-              <p className="text-gray-700">
-                <span className="font-medium">Vet:</span> Dr. {appointment.vet.first_name} {appointment.vet.last_name}
-              </p>
-            )}
-            {appointment.address && (
-              <p className="text-gray-700">
-                <span className="font-medium">Location:</span> {appointment.address}
-              </p>
-            )}
-            {appointment.services && (
-              <div className="text-gray-700">
-                <span className="font-medium">Services:</span>
-                <ul className="ml-5 mt-1 list-disc">
-                  {Array.isArray(appointment.services) 
-                    ? appointment.services.map((service: any, index: number) => (
-                        <li key={index}>{service.name || service}</li>
-                      ))
-                    : <li>{String(appointment.services)}</li>
-                  }
-                </ul>
+          )}
+          <div className="flex-1">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {formatDate(appointment.date)}
+                </h3>
+                <p className="text-gray-600">
+                  {appointment.time_slot || appointment.time || appointment.time_of_day}
+                </p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
+                {formatStatus(appointment.status)}
+              </span>
+            </div>
+            {/* Proposal Status Display */}
+            {appointment.userProposal && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    New Time Proposed
+                  </span>
+                  <button
+                    onClick={() => handleWithdrawProposal(appointment.userProposal.id)}
+                    className="text-xs text-red-600 hover:text-red-800 underline"
+                  >
+                    Withdraw proposal
+                  </button>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium text-gray-900">
+                    Proposed: {appointment.userProposal.proposed_date} - {appointment.userProposal.proposed_time_range}
+                    {appointment.userProposal.proposed_exact_time && ` at ${appointment.userProposal.proposed_exact_time}`}
+                  </p>
+                  {appointment.userProposal.message && (
+                    <p className="text-gray-600">
+                      <span className="font-medium">Your note:</span> "{appointment.userProposal.message}"
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Sent {new Date(appointment.userProposal.created_at).toLocaleDateString()} at{' '}
+                    {new Date(appointment.userProposal.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
               </div>
             )}
-            {appointment.total_price && (
-              <p className="text-gray-700">
-                <span className="font-medium">Total:</span> ${appointment.total_price}
-              </p>
+            {/* Proposal status display for vet */}
+            {userRole === 'vet' && appointment.userProposal && appointment.userProposal.status === 'pending' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <div className="flex items-center mb-2">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    New Time Proposed
+                  </span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium text-gray-900">
+                    Proposed: {formatProposedTime(appointment.userProposal)}
+                  </p>
+                  {appointment.userProposal.message && (
+                    <p className="text-gray-600">
+                      <span className="font-medium">Your note:</span> "{appointment.userProposal.message}"
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Sent {new Date(appointment.userProposal.created_at).toLocaleDateString()} at{' '}
+                    {new Date(appointment.userProposal.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
             )}
-            {appointment.notes && (
-              <p className="text-gray-700">
-                <span className="font-medium">Notes:</span> {appointment.notes}
-              </p>
+            {userRole === 'vet' && appointment.userProposal && appointment.userProposal.status === 'declined' && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mb-2">
+                  Proposed Time Declined
+                </span>
+                <p className="text-sm text-gray-600">
+                  Your proposed time ({formatProposedTime(appointment.userProposal)}) was declined by the pet owner.
+                </p>
+              </div>
             )}
-          </div>
-          <div className="mt-4 pt-4 border-t flex justify-between items-center">
-            <p className="text-sm text-gray-500">
-              Booking ID: {appointment.id.slice(0, 8)}
-            </p>
-            {appointment.status === 'pending' && userRole === 'pet_owner' && (
-              <button 
-                className="text-red-600 hover:text-red-800 text-sm font-medium"
-                onClick={() => {/* Add cancel functionality */}}
-              >
-                Cancel Appointment
-              </button>
-            )}
-          </div>
-          {/* Vet action buttons */}
-          {userRole === 'vet' && appointment.status === 'waiting_for_vet' && (
-            <div className="flex gap-2 mt-4 pt-4 border-t">
+            <div className="space-y-2">
+              {appointment.pets && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Pet:</span> {appointment.pets.name} ({appointment.pets.type})
+                </p>
+              )}
+              {appointment.vet && userRole === 'pet_owner' && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Vet:</span> Dr. {appointment.vet?.first_name} {appointment.vet?.last_name}
+                </p>
+              )}
+              {appointment.address && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Location:</span> {appointment.address}
+                </p>
+              )}
+              {appointment.services && (
+                <div className="text-gray-700">
+                  <span className="font-medium">Services:</span>
+                  <ul className="ml-5 mt-1 list-disc">
+                    {Array.isArray(appointment.services) 
+                      ? appointment.services.map((service: any, index: number) => (
+                          <li key={index}>{service.name || service}</li>
+                        ))
+                      : <li>{String(appointment.services)}</li>
+                    }
+                  </ul>
+                </div>
+              )}
+              {appointment.total_price && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Total:</span> ${appointment.total_price}
+                </p>
+              )}
+              {appointment.notes && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Notes:</span> {appointment.notes}
+                </p>
+              )}
+            </div>
+            {/* Action Buttons Section */}
+            <div className="flex gap-2 mt-4">
               <Button 
-                onClick={() => handleAcceptJob(appointment.id)}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => handleAcceptJob(appointment.id)} 
+                className="flex-1 bg-green-600 hover:bg-green-700"
               >
-                Accept Job
+                {appointment.userProposal ? 'Accept Original Time' : 'Accept Job'}
               </Button>
               <Button 
-                onClick={() => handleDeclineJob(appointment.id)}
-                variant="outline"
-                className="border-red-500 text-red-500 hover:bg-red-50"
+                variant="outline" 
+                onClick={() => handleDecline(appointment.id)} 
+                className="flex-1"
               >
                 Decline
               </Button>
-              <Button 
-                onClick={() => openProposeModal(appointment)}
-                variant="outline"
-              >
-                Propose New Time
-              </Button>
-            </div>
-          )}
-          {/* Pet owner: view proposals if any exist */}
-          {userRole === 'pet_owner' && (
-            <div className="flex gap-2 mt-4 pt-4 border-t">
-              <Button 
-                onClick={() => handleViewProposals(appointment)}
-                variant="outline"
-              >
-                View Time Proposals
-              </Button>
-            </div>
-          )}
-          {/* Show proposals modal for pet owner */}
-          {selectedAppointment && selectedAppointment.id === appointment.id && proposals.length > 0 && userRole === 'pet_owner' && (
-            <div className="mt-4">
-              <h4 className="font-medium mb-2">Time Proposals</h4>
-              {proposalsLoading ? (
-                <div>Loading proposals...</div>
-              ) : proposalsError ? (
-                <div className="text-red-600">{proposalsError}</div>
+              {appointment.userProposal ? (
+                <Button 
+                  variant="outline" 
+                  disabled
+                  className="flex-1 opacity-50 cursor-not-allowed"
+                >
+                  Time Proposed
+                </Button>
               ) : (
-                <div className="space-y-2">
-                  {proposals.map((proposal) => (
-                    <div key={proposal.id} className="border rounded p-3 bg-gray-50 flex flex-col md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <div><span className="font-medium">Date:</span> {proposal.proposed_date}</div>
-                        <div><span className="font-medium">Time Range:</span> {proposal.proposed_time_range}</div>
-                        {proposal.proposed_exact_time && <div><span className="font-medium">Exact Time:</span> {proposal.proposed_exact_time}</div>}
-                        {proposal.message && <div><span className="font-medium">Message:</span> {proposal.message}</div>}
-                        <div><span className="font-medium">Status:</span> {proposal.status}</div>
-                      </div>
-                      {proposal.status === 'pending' && (
-                        <div className="flex gap-2 mt-2 md:mt-0">
-                          <Button size="sm" onClick={() => handleRespondProposal(proposal.id, 'accepted')} disabled={respondingProposalId === proposal.id}>
-                            {respondingProposalId === proposal.id ? 'Accepting...' : 'Accept'}
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleRespondProposal(proposal.id, 'declined')} disabled={respondingProposalId === proposal.id}>
-                            {respondingProposalId === proposal.id ? 'Declining...' : 'Decline'}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={() => handleProposeNewTime(appointment)} 
+                  className="flex-1"
+                >
+                  Propose New Time
+                </Button>
               )}
             </div>
-          )}
+            {/* Show proposals modal for pet owner */}
+            {selectedAppointment && selectedAppointment.id === appointment.id && proposals.length > 0 && userRole === 'pet_owner' && (
+              <div className="mt-4">
+                <h4 className="font-medium mb-2">Time Proposals</h4>
+                {proposalsLoading ? (
+                  <div>Loading proposals...</div>
+                ) : proposalsError ? (
+                  <div className="text-red-600">{proposalsError}</div>
+                ) : (
+                  <div className="space-y-2">
+                    {proposals.map((proposal) => (
+                      <div key={proposal.id} className="border rounded p-3 bg-gray-50 flex flex-col md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div><span className="font-medium">Date:</span> {proposal.proposed_date}</div>
+                          <div><span className="font-medium">Time Range:</span> {proposal.proposed_time_range}</div>
+                          {proposal.proposed_exact_time && <div><span className="font-medium">Exact Time:</span> {proposal.proposed_exact_time}</div>}
+                          {proposal.message && <div><span className="font-medium">Message:</span> {proposal.message}</div>}
+                          <div><span className="font-medium">Status:</span> {proposal.status}</div>
+                        </div>
+                        {proposal.status === 'pending' && (
+                          <div className="flex gap-2 mt-2 md:mt-0">
+                            <Button size="sm" onClick={() => handleRespondProposal(proposal.id, 'accepted')} disabled={respondingProposalId === proposal.id}>
+                              {respondingProposalId === proposal.id ? 'Accepting...' : 'Accept'}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleRespondProposal(proposal.id, 'declined')} disabled={respondingProposalId === proposal.id}>
+                              {respondingProposalId === proposal.id ? 'Declining...' : 'Decline'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-      {/* Propose Time Modal for vet */}
-      {proposeModalOpen && selectedAppointment && selectedAppointment.id === appointment.id && (
-        <ProposeTimeModal
-          isOpen={proposeModalOpen}
-          onClose={closeProposeModal}
-          appointment={{
-            id: appointment.id,
-            date: appointment.date || '',
-            time: appointment.time || '',
-            time_of_day: appointment.time_of_day || '',
-            address: appointment.address || '',
-            notes: appointment.notes || '',
-            pets: appointment.pets,
-            users: userRole === 'pet_owner' && appointment.vet ? {
-              first_name: appointment.vet.first_name || '',
-              last_name: appointment.vet.last_name || ''
-            } : undefined
-          }}
-          onSubmit={handleProposeSubmit}
-        />
-      )}
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -507,6 +641,30 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           </TabsContent>
         ))}
       </Tabs>
+      {/* Propose Time Modal - only render once, after Tabs */}
+      {showProposeModal && selectedAppointment && (
+        <ProposeTimeModal
+          isOpen={showProposeModal}
+          onClose={() => {
+            setShowProposeModal(false);
+            setSelectedAppointment(null);
+          }}
+          appointment={{
+            id: selectedAppointment.id || '',
+            date: selectedAppointment.date || '',
+            time: selectedAppointment.time || '',
+            time_of_day: selectedAppointment.time_of_day || '',
+            address: selectedAppointment.address || '',
+            notes: selectedAppointment.notes || '',
+            pets: selectedAppointment.pets,
+            users: selectedAppointment.vet ? {
+              first_name: selectedAppointment.vet.first_name || '',
+              last_name: selectedAppointment.vet.last_name || ''
+            } : undefined
+          }}
+          onSubmit={handleProposeTime}
+        />
+      )}
     </div>
   );
 } 

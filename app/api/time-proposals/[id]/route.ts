@@ -90,3 +90,58 @@ export async function PATCH(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 } 
+
+export async function DELETE(
+  req: NextRequest, 
+  { params }: { params: { id: string } }
+) {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const proposalId = params.id;
+    // Get proposal to verify ownership
+    const { data: proposal, error: proposalError } = await supabase
+      .from('time_proposals')
+      .select('*')
+      .eq('id', proposalId)
+      .eq('vet_id', user.id)
+      .single();
+    if (proposalError || !proposal) {
+      return NextResponse.json({ 
+        error: 'Proposal not found or access denied' 
+      }, { status: 404 });
+    }
+    // Only allow withdrawal of pending proposals
+    if (proposal.status !== 'pending') {
+      return NextResponse.json({ 
+        error: 'Can only withdraw pending proposals' 
+      }, { status: 400 });
+    }
+    // Delete the proposal
+    const { error: deleteError } = await supabase
+      .from('time_proposals')
+      .delete()
+      .eq('id', proposalId);
+    if (deleteError) throw deleteError;
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Error withdrawing proposal:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error' 
+    }, { status: 500 });
+  }
+} 
