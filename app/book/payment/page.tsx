@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowLeft, Calendar, Clock, MapPin, Check, AlertCircle, CreditCard } from "lucide-react"
@@ -94,8 +94,11 @@ export default function PaymentPage() {
   const [bookingSummary, setBookingSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const appointmentCreated = useRef(false);
 
   useEffect(() => {
+    if (appointmentCreated.current) return;
+
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
@@ -104,101 +107,164 @@ export default function PaymentPage() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (appointmentCreated.current) return;
+
     const createAppointmentAndLoadSummary = async () => {
-      if (!user) {
+      // Load all booking data from sessionStorage
+      const pet_id = sessionStorage.getItem('booking_pet_id');
+      const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
+      const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
+      const address = sessionStorage.getItem('booking_address') || '';
+      const date = sessionStorage.getItem('booking_date') || '';
+      const time_slot = sessionStorage.getItem('booking_time_slot') || '';
+      const additional_info = sessionStorage.getItem('booking_additional_info') || '';
+      const is_in_perth = sessionStorage.getItem('booking_is_in_perth') === 'true';
+      const latitude = sessionStorage.getItem('booking_latitude');
+      const longitude = sessionStorage.getItem('booking_longitude');
+
+      if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
+        setError('Required booking information is missing. Please review the previous steps.');
         setLoading(false);
         return;
       }
 
-      try {
-        // Load all booking data from sessionStorage
-        const pet_id = sessionStorage.getItem('booking_pet_id');
-        const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
-        const issueDescription = sessionStorage.getItem('booking_issue_description') || '';
-        const address = sessionStorage.getItem('booking_address') || '';
-        const date = sessionStorage.getItem('booking_date') || '';
-        const time_slot = sessionStorage.getItem('booking_time_slot') || '';
-        const additional_info = sessionStorage.getItem('booking_additional_info') || '';
-        const is_in_perth = sessionStorage.getItem('booking_is_in_perth') === 'true';
-        const latitude = sessionStorage.getItem('booking_latitude');
-        const longitude = sessionStorage.getItem('booking_longitude');
+      // Service pricing map
+      const serviceMap: Record<string, { id: string; name: string; price: number }> = {
+        '1': { id: '1', name: 'After hours home visit', price: 299 },
+        '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
+      };
 
-        if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
-          setError('Required booking information is missing. Please review the previous steps.');
-          setLoading(false);
-          return;
+      // Calculate selected services and total
+      const selectedServices = service_ids.map((id: string) => 
+        serviceMap[id] || { id, name: `Service ${id}`, price: 0 }
+      );
+      const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
+
+      // Create or update appointment
+      const { data: appointment, error: appointmentError } = await supabase
+        .from('appointments')
+        .insert({
+          pet_owner_id: user.id,
+          pet_id: pet_id,
+          services: selectedServices,
+          status: 'pending',
+          date: date,
+          time_slot: time_slot,
+          address: address,
+          additional_info: additional_info,
+          notes: issueDescription,
+          total_price: totalPrice,
+          latitude: latitude ? parseFloat(latitude) : null,
+          longitude: longitude ? parseFloat(longitude) : null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (appointmentError) {
+        console.error('Error creating appointment:', appointmentError);
+        setError('Failed to create appointment. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Notify all available vets if no vet_id is present
+      if (!appointment.vet_id) {
+        const { data: vets, error: vetsError } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('role', 'vet')
+          .eq('is_enabled', true);
+        console.log('[Notification] Fetched vets:', vets, 'Error:', vetsError);
+        if (!vetsError && vets && vets.length > 0) {
+          const { data: petOwner } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', user.id)
+            .single();
+          const { data: petData } = await supabase
+            .from('pets')
+            .select('name')
+            .eq('id', pet_id)
+            .single();
+          const notifications = vets.map((vet: any) => ({
+            user_id: vet.id,
+            type: 'new_appointment',
+            title: `New appointment for ${petData?.name || 'pet'} from ${petOwner?.full_name || 'owner'}`,
+            message: `Appointment scheduled for ${appointment.date} at ${appointment.time_slot}`,
+            appointment_id: appointment.id,
+            is_read: false,
+            created_at: new Date().toISOString()
+          }));
+          console.log('[Notification] Creating notifications for vets:', notifications);
+          if (notifications.length > 0) {
+            const { error: notifError } = await supabase.from('notifications').insert(notifications);
+            if (notifError) {
+              console.error('[Notification] Error inserting notifications:', notifError);
+            } else {
+              console.log('[Notification] Notifications inserted successfully for all vets');
+            }
+          }
         }
-
-        // Service pricing map
-        const serviceMap: Record<string, { id: string; name: string; price: number }> = {
-          '1': { id: '1', name: 'After hours home visit', price: 299 },
-          '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
-        };
-
-        // Calculate selected services and total
-        const selectedServices = service_ids.map((id: string) => 
-          serviceMap[id] || { id, name: `Service ${id}`, price: 0 }
-        );
-        const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
-
-        // Create or update appointment
-        const { data: appointment, error: appointmentError } = await supabase
-          .from('appointments')
-          .insert({
-            pet_owner_id: user.id,
-            pet_id: pet_id,
-            services: selectedServices,
-            status: 'pending',
-            date: date,
-            time_slot: time_slot,
-            address: address,
-            additional_info: additional_info,
-            notes: issueDescription,
-            total_price: totalPrice,
-            latitude: latitude ? parseFloat(latitude) : null,
-            longitude: longitude ? parseFloat(longitude) : null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
+      } else {
+        // Notify specific vet if vet_id is present (legacy logic)
+        const { data: petOwner } = await supabase
+          .from('users')
+          .select('full_name')
+          .eq('id', user.id)
           .single();
-
-        if (appointmentError) {
-          console.error('Error creating appointment:', appointmentError);
-          setError('Failed to create appointment. Please try again.');
-          setLoading(false);
-          return;
-        }
-
-        setAppointmentId(appointment.id);
-
-        // Get pet details
         const { data: petData } = await supabase
           .from('pets')
-          .select('name, type')
+          .select('name')
           .eq('id', pet_id)
           .single();
-
-        setBookingSummary({
-          id: appointment.id,
-          pet: petData,
-          services: selectedServices,
-          appointment: {
-            date: new Date(date).toLocaleDateString(),
-            time: time_slot,
-            address: address,
-            additionalInfo: additional_info,
-            issueDescription: issueDescription,
-          },
-          totalPrice: totalPrice,
-        });
-
-      } catch (err: any) {
-        console.error('Error loading booking summary:', err);
-        setError(err.message || 'Failed to load booking details. Please try again.');
-      } finally {
-        setLoading(false);
+        console.log('[Notification] Creating notification for vet_id:', appointment.vet_id);
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: appointment.vet_id,
+            type: 'new_appointment',
+            title: `New appointment for ${petData?.name || 'pet'} from ${petOwner?.full_name || 'owner'}`,
+            message: `Appointment scheduled for ${appointment.date} at ${appointment.time_slot}`,
+            appointment_id: appointment.id,
+            is_read: false,
+            created_at: new Date().toISOString()
+          });
+        if (notifError) {
+          console.error('[Notification] Error inserting notification for vet:', notifError);
+        } else {
+          console.log('[Notification] Notification inserted successfully for vet:', appointment.vet_id);
+        }
       }
+
+      setAppointmentId(appointment.id);
+
+      // Get pet details
+      const { data: petData } = await supabase
+        .from('pets')
+        .select('name, type')
+        .eq('id', pet_id)
+        .single();
+
+      setBookingSummary({
+        id: appointment.id,
+        pet: petData,
+        services: selectedServices,
+        appointment: {
+          date: new Date(date).toLocaleDateString(),
+          time: time_slot,
+          address: address,
+          additionalInfo: additional_info,
+          issueDescription: issueDescription,
+        },
+        totalPrice: totalPrice,
+      });
+      appointmentCreated.current = true;
     };
 
     createAppointmentAndLoadSummary();
@@ -417,6 +483,28 @@ export default function PaymentPage() {
                     <p className="mt-1 text-gray-700">{bookingSummary.appointment.issueDescription}</p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Hold Disclaimer */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-6 mb-4">
+            <div className="flex items-start">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-amber-900">
+                  Important: Payment Authorization
+                </h4>
+                <p className="text-sm text-amber-800">
+                  Your payment will be <strong>authorized only</strong> at checkout. This means:
+                </p>
+                <ul className="text-sm text-amber-800 space-y-1 ml-4">
+                  <li>• The amount will be held on your card</li>
+                  <li>• You will NOT be charged immediately</li>
+                  <li>• Payment will only be processed after the vet completes the appointment</li>
+                  <li>• If the appointment is cancelled, the hold will be released</li>
+                  <li>• Authorization expires after 7 days if not captured</li>
+                </ul>
               </div>
             </div>
           </div>

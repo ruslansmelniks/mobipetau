@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/hooks/use-toast';
 import { ProposeTimeModal } from '@/components/propose-time-modal'
 import { WithdrawProposalModal } from '@/components/withdraw-proposal-modal'
+import { CancelAppointmentModal } from '@/components/cancel-appointment-modal'
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -38,6 +39,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [showProposeModal, setShowProposeModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [proposalToWithdraw, setProposalToWithdraw] = useState<any>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [appointmentToCancel, setAppointmentToCancel] = useState<any>(null);
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
   const getFilteredAppointments = (appointments: AppointmentWithDetails[]) => {
@@ -362,6 +365,42 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     setProposalToWithdraw(null);
   };
 
+  const handleCancelAppointment = (appointment: any) => {
+    setAppointmentToCancel(appointment);
+    setShowCancelModal(true);
+  };
+
+  const confirmCancelAppointment = async () => {
+    if (!appointmentToCancel) return;
+    try {
+      console.log('Cancelling appointment:', appointmentToCancel.id);
+      const response = await fetch(`/api/appointments/${appointmentToCancel.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel appointment');
+      }
+      console.log('Appointment cancelled successfully');
+      setShowCancelModal(false);
+      setAppointmentToCancel(null);
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error cancelling appointment:', error);
+      alert(`Failed to cancel appointment: ${error.message}`);
+      setShowCancelModal(false);
+      setAppointmentToCancel(null);
+    }
+  };
+
+  const cancelCancelAppointment = () => {
+    setShowCancelModal(false);
+    setAppointmentToCancel(null);
+  };
+
   useEffect(() => {
     if (fetchingRef.current) return
     
@@ -561,35 +600,88 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
             </div>
             {/* Action Buttons Section */}
             <div className="flex gap-2 mt-4">
-              <Button 
-                onClick={() => handleAcceptJob(appointment.id)} 
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {appointment.userProposal ? 'Accept Original Time' : 'Accept Job'}
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => handleDecline(appointment.id)} 
-                className="flex-1"
-              >
-                Decline
-              </Button>
-              {appointment.userProposal ? (
-                <Button 
-                  variant="outline" 
-                  disabled
-                  className="flex-1 opacity-50 cursor-not-allowed"
-                >
-                  Time Proposed
-                </Button>
+              {userRole === 'vet' ? (
+                // VET ACTIONS
+                <>
+                  {!appointment.userProposal ? (
+                    // No proposal yet - show all vet options
+                    <>
+                      <Button 
+                        onClick={() => handleAcceptJob(appointment.id)} 
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        Accept Job
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleDecline(appointment.id)} 
+                        className="flex-1"
+                      >
+                        Decline
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleProposeNewTime(appointment)} 
+                        className="flex-1"
+                      >
+                        Propose New Time
+                      </Button>
+                    </>
+                  ) : appointment.userProposal.status === 'pending' ? (
+                    // Proposal pending - limited vet options
+                    <>
+                      <Button 
+                        onClick={() => handleAcceptJob(appointment.id)} 
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        Accept Original Time
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        disabled
+                        className="flex-1 opacity-50 cursor-not-allowed"
+                      >
+                        Time Proposed
+                      </Button>
+                    </>
+                  ) : (
+                    // Proposal declined - show all vet options again
+                    <>
+                      <Button 
+                        onClick={() => handleAcceptJob(appointment.id)} 
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        Accept Job
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleDecline(appointment.id)} 
+                        className="flex-1"
+                      >
+                        Decline
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleProposeNewTime(appointment)} 
+                        className="flex-1"
+                      >
+                        Propose New Time
+                      </Button>
+                    </>
+                  )}
+                </>
               ) : (
-                <Button 
-                  variant="outline" 
-                  onClick={() => handleProposeNewTime(appointment)} 
-                  className="flex-1"
-                >
-                  Propose New Time
-                </Button>
+                // PET OWNER ACTIONS
+                <div className="w-full flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleCancelAppointment(appointment)}
+                    className="text-red-600 hover:underline text-sm font-medium"
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
             {/* Show proposals modal for pet owner */}
@@ -695,6 +787,14 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
             timeRange: proposalToWithdraw.proposed_time_range,
             exactTime: proposalToWithdraw.proposed_exact_time
           }}
+        />
+      )}
+      {showCancelModal && appointmentToCancel && (
+        <CancelAppointmentModal
+          isOpen={showCancelModal}
+          onClose={cancelCancelAppointment}
+          onConfirm={confirmCancelAppointment}
+          appointment={appointmentToCancel}
         />
       )}
     </div>

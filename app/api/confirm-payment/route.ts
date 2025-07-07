@@ -3,9 +3,7 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-04-30.basil',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -30,10 +28,26 @@ export async function POST(req: NextRequest) {
 
     // Verify the Stripe session
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    
-    if (!session || session.payment_status !== 'paid') {
+
+    // For manual capture, the status will be 'unpaid' until captured
+    // Check if payment_intent exists instead
+    if (!session || !session.payment_intent) {
       return NextResponse.json(
-        { error: 'Payment not completed' },
+        { error: 'Payment session invalid' },
+        { status: 400 }
+      );
+    }
+
+    // Verify the payment intent status
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      session.payment_intent as string
+    );
+
+    // For manual capture, status should be 'requires_capture' after successful authorization
+    if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
+      console.error('Invalid payment intent status:', paymentIntent.status);
+      return NextResponse.json(
+        { error: 'Payment authorization failed' },
         { status: 400 }
       );
     }
@@ -55,8 +69,9 @@ export async function POST(req: NextRequest) {
       .from('appointments')
       .update({
         status: 'waiting_for_vet',
-        payment_status: 'paid',
+        payment_status: 'authorized', // Changed from 'paid' to 'authorized'
         stripe_session_id: sessionId,
+        stripe_payment_intent_id: session.payment_intent as string,
         updated_at: new Date().toISOString()
       })
       .eq('id', appointmentId)
@@ -82,7 +97,7 @@ export async function POST(req: NextRequest) {
       success: true,
       appointment,
       appointmentId,
-      message: 'Your booking has been confirmed and payment received!',
+      message: 'Your booking has been confirmed and payment authorized!',
       newStatus: appointment.status,
       petName: appointment.pets?.name,
       appointmentDate: appointment.date,

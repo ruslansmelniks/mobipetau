@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
             product_data: {
               name: 'Veterinary Appointment',
               description: description,
+              metadata: {
+                notice: 'Payment will be held and only charged after service completion'
+              }
             },
             unit_amount: Math.round(amount * 100),
           },
@@ -75,6 +78,23 @@ export async function POST(req: NextRequest) {
         },
       ],
       mode: 'payment',
+      payment_intent_data: {
+        capture_method: 'manual', // This authorizes but doesn't capture funds
+        metadata: {
+          appointmentId: appointmentId,
+        },
+      },
+      custom_text: {
+        submit: {
+          message: 'Your payment will be authorized now but only charged after the vet completes the service. Funds will be held for up to 7 days.'
+        },
+        terms_of_service_acceptance: {
+          message: 'I understand that my payment will be held and only charged upon service completion'
+        }
+      },
+      consent_collection: {
+        terms_of_service: 'required',
+      },
       success_url: `${req.nextUrl.origin}/book/confirmation?session_id={CHECKOUT_SESSION_ID}&appointment_id=${appointmentId}`,
       cancel_url: `${req.nextUrl.origin}/book/payment`,
       metadata: {

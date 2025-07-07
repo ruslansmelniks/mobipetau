@@ -74,6 +74,7 @@ export default function VetJobsPage() {
   const [proposedDates, setProposedDates] = useState<Record<string, Date>>({});
   const [proposedTimes, setProposedTimes] = useState<Record<string, string>>({});
   const [proposedMessages, setProposedMessages] = useState<Record<string, string>>({});
+  const [capturingPayment, setCapturingPayment] = useState<Record<string, boolean>>({});
 
   const fetchAvailableJobs = useCallback(async (isBackgroundRefresh = false) => {
     if (!isBackgroundRefresh) {
@@ -226,51 +227,29 @@ export default function VetJobsPage() {
   }, [user, supabase, fetchAllJobs]);
 
   const handleAcceptJob = async (jobId: string) => {
-    setLoadingActions(prev => ({ ...prev, [jobId]: 'accept' }));
     try {
-      // Get the session to have the auth token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('No active session');
-      }
-
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           appointmentId: jobId,
-          action: 'accept',
+          status: 'confirmed',
+          action: 'accept'
         }),
       });
 
-      const result = await response.json();
-      
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to accept job');
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to accept job');
       }
 
-      toast({
-        title: "Success",
-        description: "Job accepted successfully",
-      });
-      
-      await fetchAllJobs();
-    } catch (error: any) {
-      console.error("Error accepting job:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to accept job",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingActions(prev => {
-        const newState = { ...prev };
-        delete newState[jobId];
-        return newState;
-      });
+      fetchAllJobs();
+      toast({ title: 'Success', description: 'Job accepted successfully!', variant: 'default' });
+    } catch (error) {
+      console.error('Error accepting job:', error);
+      toast({ title: 'Error', description: 'Failed to accept job', variant: 'destructive' });
     }
   };
 
@@ -404,6 +383,48 @@ export default function VetJobsPage() {
     }
   };
 
+  const handleCapturePayment = async (jobId: string) => {
+    setCapturingPayment(prev => ({ ...prev, [jobId]: true }));
+    try {
+      const response = await fetch('/api/capture-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: jobId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to complete appointment');
+      }
+      toast({ title: 'Success', description: 'Appointment completed and payment captured!', variant: 'default' });
+      // Optionally refresh jobs list
+      fetchAllJobs();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to complete appointment', variant: 'destructive' });
+    } finally {
+      setCapturingPayment(prev => ({ ...prev, [jobId]: false }));
+    }
+  };
+
+  const handleCompleteJob = async (appointmentId: string) => {
+    try {
+      const response = await fetch('/api/capture-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to complete appointment');
+      }
+
+      toast({ title: 'Success', description: 'Appointment completed and payment captured!', variant: 'default' });
+      fetchAllJobs();
+    } catch (error) {
+      console.error('Error completing appointment:', error);
+      toast({ title: 'Error', description: 'Failed to complete appointment', variant: 'destructive' });
+    }
+  };
+
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch = 
       job.pets?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -416,272 +437,104 @@ export default function VetJobsPage() {
 
   // Categorize jobs
   const newJobs = filteredJobs.filter(job => job.status === 'waiting_for_vet');
-  const ongoingJobs = filteredJobs.filter(job => 
-    job.status === 'confirmed' || job.status === 'in_progress' || job.status === 'time_proposed'
-  );
-  const pastJobs = filteredJobs.filter(job => 
-    job.status === 'completed' || job.status === 'cancelled' || job.status === 'declined'
-  );
+  const ongoingJobs = filteredJobs.filter(job => job.status === 'confirmed');
+  const pastJobs = filteredJobs.filter(job => job.status === 'completed' || job.status === 'cancelled' || job.status === 'declined');
 
-  const renderJobCard = (job: Job) => {
-    const statusInfo = getStatusLabel(job.status);
-    const isPending = job.status === 'waiting_for_vet';
-    const isOngoing = job.status === 'confirmed' || job.status === 'in_progress' || job.status === 'time_proposed';
-    const isPast = job.status === 'completed' || job.status === 'cancelled' || job.status === 'declined';
-
-    return (
-      <div key={job.id} className="bg-white rounded-lg border shadow-sm overflow-hidden">
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex items-center gap-3">
-              {job.pets?.image ? (
-                <Image
-                  src={job.pets.image}
-                  alt={job.pets.name}
-                  width={48}
-                  height={48}
-                  className="rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
-                  <span className="text-gray-500 text-lg">
-                    {job.pets?.name?.charAt(0) || 'P'}
-                  </span>
-                </div>
-              )}
-              <div>
-                <h3 className="text-lg font-semibold">
-                  {job.pets?.name || 'Unknown Pet'}
-                </h3>
-                <p className="text-gray-600">
-                  {job.pet_owner?.first_name} {job.pet_owner?.last_name}
-                </p>
-              </div>
+  const renderJobCard = (job: any, isAvailable: boolean = true) => (
+    <div key={job.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+      <div className="flex items-start space-x-4">
+        {/* Pet Profile Picture */}
+        <div className="flex-shrink-0">
+          <img
+            src={job.pets?.image || '/default-pet-avatar.png'}
+            alt={job.pets?.name || 'Pet'}
+            className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
+          />
+        </div>
+        <div className="flex-1">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {job.date ? format(new Date(job.date), 'EEEE, MMMM d, yyyy') : 'No date'}
+              </h3>
+              <p className="text-sm text-gray-600">{job.time_slot}</p>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
-                {statusInfo.label}
-              </span>
-              {job.total_price && (
-                <div className="flex items-center gap-1 text-green-600 font-semibold">
-                  <DollarSign className="h-4 w-4" />
-                  <span>${job.total_price}</span>
-                </div>
-              )}
-            </div>
+            <span className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+              {job.status === 'waiting_for_vet' ? 'Waiting for vet' : job.status}
+            </span>
           </div>
-          
-          <div className="px-6 py-4 border-b">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="h-5 w-5 text-teal-500 flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                </svg>
-              </div>
-              <h3 className="font-medium text-gray-700">Appointment Details</h3>
-            </div>
-            <div className="ml-7 space-y-1">
-              <p className="text-gray-600 text-sm flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-gray-400" />
-                {job.date ? format(new Date(job.date), "EEEE, MMMM d, yyyy") : "No date specified"}
-              </p>
-              <p className="text-gray-600 text-sm flex items-center gap-2">
-                <Clock className="h-4 w-4 text-gray-400" />
-                {job.time || "No time specified"}
-              </p>
-              <p className="text-gray-600 text-sm flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-gray-400" />
-                {job.address || job.location || "No location specified"}
-              </p>
-            </div>
+          {/* Pet Information */}
+          <div className="mb-2">
+            <p className="text-sm font-medium text-gray-700">
+              Pet: {job.pets?.name} ({job.pets?.type})
+            </p>
           </div>
-
-          {/* Pet Owner Information */}
-          <div className="px-6 py-4 border-b">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="h-5 w-5 text-teal-500 flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                </svg>
-              </div>
-              <h3 className="font-medium text-gray-700">Pet Owner Information</h3>
-            </div>
-            <div className="ml-7 space-y-1">
-              <p className="text-gray-600 text-sm flex items-center gap-2">
-                <svg className="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                </svg>
-                {job.pet_owner?.email}
-              </p>
-              {job.pet_owner?.phone && (
-                <p className="text-gray-600 text-sm flex items-center gap-2">
-                  <svg className="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
-                  </svg>
-                  {job.pet_owner.phone}
-                </p>
-              )}
-            </div>
+          {/* Owner Information */}
+          <div className="mb-2">
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">Owner:</span> {job.pet_owner?.first_name} {job.pet_owner?.last_name}
+            </p>
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">Contact:</span> {job.pet_owner?.phone || job.pet_owner?.email}
+            </p>
           </div>
-          
-          {job.notes && (
-            <div className="px-6 pb-4">
-              <div className="bg-gray-50 p-4 rounded-md">
-                <p className="font-medium text-gray-700 mb-1">Issue Description:</p>
-                <p className="text-gray-600">{job.notes}</p>
-              </div>
+          {/* Location */}
+          <div className="mb-2">
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">Location:</span> {job.address}
+            </p>
+          </div>
+          {/* Services */}
+          <div className="mb-2">
+            <p className="text-sm font-medium text-gray-700 mb-1">Services:</p>
+            <ul className="list-disc list-inside text-sm text-gray-600">
+              {job.services?.map((service: any, index: number) => (
+                <li key={index}>{service.name}</li>
+              ))}
+            </ul>
+          </div>
+          {/* Total */}
+          <div className="mb-4">
+            <p className="text-lg font-semibold text-gray-900">
+              Total: ${job.total_price}
+            </p>
+          </div>
+          {/* Action Buttons */}
+          {isAvailable && (
+            <div className="flex space-x-3">
+              <button
+                onClick={() => handleAcceptJob(job.id)}
+                className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 font-medium transition-colors"
+              >
+                Accept Job
+              </button>
+              <button
+                onClick={() => handleDeclineJob(job.id)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => handleProposeTime(job.id)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
+              >
+                Propose New Time
+              </button>
             </div>
           )}
-          
-          {job.status === 'time_proposed' && job.proposed_time && (
-            <div className="px-6 pb-4">
-              <div className="bg-yellow-50 p-4 rounded-md border border-yellow-200">
-                <p className="font-medium text-yellow-800 mb-1">Proposed Time:</p>
-                <p className="text-yellow-700">{job.proposed_time}</p>
-                {job.proposed_message && (
-                  <p className="text-yellow-600 text-sm mt-1">{job.proposed_message}</p>
-                )}
-              </div>
-            </div>
+          {/* For Ongoing Jobs - Add Complete Button */}
+          {!isAvailable && job.status === 'confirmed' && (
+            <button
+              onClick={() => handleCompleteJob(job.id)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium transition-colors"
+            >
+              Mark as Complete
+            </button>
           )}
-          
-          <div className="p-6 bg-gray-50 border-t">
-            {isPending ? (
-              <>
-                {/* Propose time inputs */}
-                <div className="mb-4 space-y-3">
-                  <div>
-                    <Label htmlFor={`date-${job.id}`} className="text-sm font-medium">
-                      Propose a different date
-                    </Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !proposedDates[job.id] && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {proposedDates[job.id] ? format(proposedDates[job.id], "PPP") : "Pick a date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <CalendarComponent
-                          mode="single"
-                          selected={proposedDates[job.id]}
-                          onSelect={(date) => setProposedDates(prev => ({ ...prev, [job.id]: date! }))}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div>
-                    <Label htmlFor={`time-${job.id}`} className="text-sm font-medium">
-                      Propose a different time
-                    </Label>
-                    <Select
-                      value={proposedTimes[job.id] || ""}
-                      onValueChange={(value) => setProposedTimes(prev => ({ ...prev, [job.id]: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="06:00 - 08:00 AM">06:00 - 08:00 AM</SelectItem>
-                        <SelectItem value="08:00 - 10:00 AM">08:00 - 10:00 AM</SelectItem>
-                        <SelectItem value="10:00 - 12:00 PM">10:00 - 12:00 PM</SelectItem>
-                        <SelectItem value="12:00 - 02:00 PM">12:00 - 02:00 PM</SelectItem>
-                        <SelectItem value="02:00 - 04:00 PM">02:00 - 04:00 PM</SelectItem>
-                        <SelectItem value="04:00 - 06:00 PM">04:00 - 06:00 PM</SelectItem>
-                        <SelectItem value="06:00 - 08:00 PM">06:00 - 08:00 PM</SelectItem>
-                        <SelectItem value="08:00 - 10:00 PM">08:00 - 10:00 PM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor={`message-${job.id}`} className="text-sm font-medium">
-                      Message (optional)
-                    </Label>
-                    <Textarea
-                      id={`message-${job.id}`}
-                      placeholder="Add a message explaining the time change..."
-                      value={proposedMessages[job.id] || ""}
-                      onChange={(e) => setProposedMessages(prev => ({ ...prev, [job.id]: e.target.value }))}
-                      className="min-h-[80px]"
-                    />
-                  </div>
-                </div>
-                
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    onClick={() => handleAcceptJob(job.id)}
-                    disabled={loadingActions[job.id] === 'accept'}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    {loadingActions[job.id] === 'accept' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4" />
-                    )}
-                    Accept Job
-                  </Button>
-                  
-                  <Button
-                    onClick={() => handleDeclineJob(job.id)}
-                    disabled={loadingActions[job.id] === 'decline'}
-                    variant="outline"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    {loadingActions[job.id] === 'decline' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <X className="h-4 w-4" />
-                    )}
-                    Decline
-                  </Button>
-                  
-                  {(proposedDates[job.id] || proposedTimes[job.id]) && (
-                    <Button
-                      onClick={() => handleProposeTime(job.id)}
-                      disabled={loadingActions[job.id] === 'propose'}
-                      variant="outline"
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                    >
-                      {loadingActions[job.id] === 'propose' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Clock4 className="h-4 w-4" />
-                      )}
-                      Propose Time
-                    </Button>
-                  )}
-                </div>
-              </>
-            ) : isOngoing ? (
-              <div className="text-center">
-                <p className="text-gray-600 mb-3">This job is currently in progress</p>
-                <Button 
-                  className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
-                  asChild
-                >
-                  <a href={`/vet/appointments/${job.id}`}>
-                    View Details
-                  </a>
-                </Button>
-              </div>
-            ) : (
-              <div className="text-center text-gray-600">
-                {isPast ? 'This job has been completed' : 'This job is no longer available'}
-              </div>
-            )}
-          </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <ErrorBoundary>
@@ -762,7 +615,7 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : newJobs.length > 0 ? (
-              newJobs.map(renderJobCard)
+              newJobs.map((job) => renderJobCard(job, true))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No new jobs available</h2>
@@ -778,7 +631,7 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : ongoingJobs.length > 0 ? (
-              ongoingJobs.map(renderJobCard)
+              ongoingJobs.map((job) => renderJobCard(job, false))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No ongoing jobs</h2>
@@ -794,11 +647,11 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : pastJobs.length > 0 ? (
-              pastJobs.map(renderJobCard)
+              pastJobs.map((job) => renderJobCard(job, false))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No past jobs</h2>
-                <p className="text-gray-600 mb-6">You don't have any completed or cancelled jobs.</p>
+                <p className="text-gray-600 mb-6">You don't have any past jobs.</p>
               </div>
             )}
           </TabsContent>

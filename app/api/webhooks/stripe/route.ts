@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-04-30.basil',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
@@ -23,8 +21,22 @@ export async function POST(req: NextRequest) {
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object as Stripe.Checkout.Session;
-      // Update your database with payment info
-      // ...
+      // ADD: Store payment intent ID for manual capture
+      if (session.payment_intent && session.metadata?.appointmentId) {
+        // Import your supabase admin client at the top of the file
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        await supabaseAdmin
+          .from('appointments')
+          .update({
+            stripe_payment_intent_id: session.payment_intent as string,
+            payment_status: 'authorized' // New status - funds held but not captured
+          })
+          .eq('id', session.metadata.appointmentId);
+      }
       break;
     default:
       console.log(`Unhandled event type ${event.type}`);
