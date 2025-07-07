@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/hooks/use-toast';
 import { ProposeTimeModal } from '@/components/propose-time-modal'
+import { WithdrawProposalModal } from '@/components/withdraw-proposal-modal'
 
 type Appointment = Database['public']['Tables']['appointments']['Row']
 type Pet = Database['public']['Tables']['pets']['Row']
@@ -35,6 +36,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [userProposals, setUserProposals] = useState<any[]>([])
   const [appointmentsWithProposals, setAppointmentsWithProposals] = useState<AppointmentWithDetails[]>([])
   const [showProposeModal, setShowProposeModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [proposalToWithdraw, setProposalToWithdraw] = useState<any>(null);
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
   const getFilteredAppointments = (appointments: AppointmentWithDetails[]) => {
@@ -224,12 +227,14 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
             const userProposalsForThisAppt = userProposals?.filter(p => 
               p.appointment_id === apt.id && p.vet_id === userId
             );
-            const latestUserProposal = userProposalsForThisAppt?.length > 0 
-              ? userProposalsForThisAppt.sort((a, b) => 
-                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                )[0]
-              : null;
+            let latestUserProposal = null;
+            if (userProposalsForThisAppt && userProposalsForThisAppt.length > 0) {
+              latestUserProposal = userProposalsForThisAppt.sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )[0];
+            }
             console.log(`Appointment ${apt.id} - Latest proposal:`, latestUserProposal);
+            console.log(`Appointment ${apt.id} - Total proposals found:`, userProposalsForThisAppt?.length || 0);
             return {
               ...apt,
               userProposal: latestUserProposal
@@ -324,22 +329,37 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   }
 
   // Add withdraw proposal handler
-  const handleWithdrawProposal = async (proposalId: string) => {
-    const confirmed = window.confirm('Are you sure you want to withdraw your time proposal? This action cannot be undone.');
-    if (!confirmed) return;
+  const handleWithdrawProposal = (proposal: any) => {
+    setProposalToWithdraw(proposal);
+    setShowWithdrawModal(true);
+  };
+  const confirmWithdrawProposal = async () => {
+    if (!proposalToWithdraw) return;
     try {
-      const response = await fetch(`/api/time-proposals/${proposalId}`, {
+      console.log('Withdrawing proposal:', proposalToWithdraw.id);
+      const response = await fetch(`/api/time-proposals/${proposalToWithdraw.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' }
       });
+      console.log('DELETE response status:', response.status);
+      const responseData = await response.json();
+      console.log('DELETE response data:', responseData);
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to withdraw proposal');
+        throw new Error(responseData.error || 'Failed to withdraw proposal');
       }
+      setShowWithdrawModal(false);
+      setProposalToWithdraw(null);
       window.location.reload();
     } catch (error: any) {
+      console.error('Error withdrawing proposal:', error);
       alert(`Failed to withdraw proposal: ${error.message}`);
+      setShowWithdrawModal(false);
+      setProposalToWithdraw(null);
     }
+  };
+  const cancelWithdrawProposal = () => {
+    setShowWithdrawModal(false);
+    setProposalToWithdraw(null);
   };
 
   useEffect(() => {
@@ -442,7 +462,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                     New Time Proposed
                   </span>
                   <button
-                    onClick={() => handleWithdrawProposal(appointment.userProposal.id)}
+                    onClick={() => handleWithdrawProposal(appointment.userProposal)}
                     className="text-xs text-red-600 hover:text-red-800 underline"
                   >
                     Withdraw proposal
@@ -663,6 +683,18 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
             } : undefined
           }}
           onSubmit={handleProposeTime}
+        />
+      )}
+      {showWithdrawModal && proposalToWithdraw && (
+        <WithdrawProposalModal
+          isOpen={showWithdrawModal}
+          onClose={cancelWithdrawProposal}
+          onConfirm={confirmWithdrawProposal}
+          proposalDetails={{
+            date: proposalToWithdraw.proposed_date,
+            timeRange: proposalToWithdraw.proposed_time_range,
+            exactTime: proposalToWithdraw.proposed_exact_time
+          }}
         />
       )}
     </div>
