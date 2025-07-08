@@ -1,4 +1,4 @@
-import { type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/utils/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
@@ -54,6 +54,19 @@ export async function middleware(request: NextRequest) {
     return Response.redirect(new URL(redirectPath, request.url))
   }
 
+  // If user is authenticated, set custom headers for downstream API routes
+  if (user) {
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-user-id', user.id)
+    requestHeaders.set('x-user-email', user.email || '')
+    requestHeaders.set('x-user-role', user.user_metadata?.role || '')
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    })
+  }
+
   return supabaseResponse
 }
 
@@ -67,6 +80,6 @@ export const config = {
      * - public folder
      * - Chrome DevTools specific files
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|.well-known).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$|.well-known).*)',
   ],
 } 

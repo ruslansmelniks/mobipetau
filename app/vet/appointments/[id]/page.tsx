@@ -122,6 +122,12 @@ export default function AppointmentDetailPage() {
     "06:00 - 08:00 PM"
   ]
 
+  // API Integration Fix - Original handlers backed up
+  // Date: 2025-01-07
+  // Changes: Accept/Decline using /api/vet/appointment-status endpoint
+  const [showDeclineDialog, setShowDeclineDialog] = useState(false)
+  const [declineMessage, setDeclineMessage] = useState("")
+
   useEffect(() => {
     const fetchAppointmentDetails = async () => {
       if (!user) return
@@ -194,50 +200,48 @@ export default function AppointmentDetailPage() {
   
   const handleAcceptAppointment = async () => {
     if (!appointment) return
-    
     setActionLoading(true)
-    
     try {
-      const { error } = await supabase
-        .from("appointments")
-        .update({
-          status: "in_progress",
-          vet_id: user?.id,
-          accepted_at: new Date().toISOString()
-        })
-        .eq("id", appointmentId)
-      
-      if (error) throw error
-      
-      // Send notification to pet owner
-      await supabase.from("notifications").insert({
-        user_id: appointment.pet_owner_id,
-        type: "appointment_accepted",
-        message: "Your appointment has been accepted by the veterinarian",
-        appointment_id: appointmentId,
-        created_at: new Date().toISOString()
-      })
-      
-      // Update local state
+      // Get the session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+      // Call the API endpoint
+      const response = await fetch('/api/vet/appointment-status', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          appointmentId: appointmentId,
+          action: 'accept',
+        }),
+      });
+      const result = await response.json();
+      console.log('Accept response:', result); // Debug log
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to accept appointment');
+      }
+      // Update local state with the response
       setAppointment({
         ...appointment,
-        status: "in_progress",
+        status: result.status || "confirmed",
         vet_id: user?.id,
         accepted_at: new Date().toISOString()
       })
-      
       toast({
         title: "Success",
         description: "Appointment accepted successfully",
       })
-      
       // Move to clinical record tab
       setActiveTab("record")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error accepting appointment:", error)
       toast({
         title: "Error",
-        description: "Failed to accept appointment",
+        description: error.message || "Failed to accept appointment",
         variant: "destructive",
       })
     } finally {
@@ -246,48 +250,51 @@ export default function AppointmentDetailPage() {
   }
   
   const handleDeclineAppointment = async () => {
-    if (!appointment) return
-    
+    if (!appointment || !declineMessage) return
     setActionLoading(true)
-    
     try {
-      const { error } = await supabase
-        .from("appointments")
-        .update({
-          status: "declined",
-          declined_at: new Date().toISOString(),
-          declined_by: user?.id
-        })
-        .eq("id", appointmentId)
-      
-      if (error) throw error
-      
-      // Send notification to pet owner
-      await supabase.from("notifications").insert({
-        user_id: appointment.pet_owner_id,
-        type: "appointment_declined",
-        message: "Your appointment has been declined by the veterinarian",
-        appointment_id: appointmentId,
-        created_at: new Date().toISOString()
-      })
-      
+      // Get the session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+      // Call the API endpoint
+      const response = await fetch('/api/vet/appointment-status', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          appointmentId: appointmentId,
+          action: 'decline',
+          message: declineMessage,
+        }),
+      });
+      const result = await response.json();
+      console.log('Decline response:', result); // Debug log
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to decline appointment');
+      }
       // Update local state
       setAppointment({
         ...appointment,
-        status: "declined",
+        status: result.status || "declined",
         declined_at: new Date().toISOString(),
         declined_by: user?.id
       })
-      
       toast({
         title: "Success",
         description: "Appointment declined successfully",
       })
-    } catch (error) {
+      // Close the dialog
+      setShowDeclineDialog(false)
+      setDeclineMessage("")
+    } catch (error: any) {
       console.error("Error declining appointment:", error)
       toast({
         title: "Error",
-        description: "Failed to decline appointment",
+        description: error.message || "Failed to decline appointment",
         variant: "destructive",
       })
     } finally {
@@ -602,7 +609,7 @@ export default function AppointmentDetailPage() {
     )
   }
   
-  const isAppointmentPending = appointment.status === "waiting_for_vet"
+  const isAppointmentPending = appointment?.status === "waiting_for_vet" && appointment?.payment_status === "paid"
   const isAppointmentInProgress = appointment.status === "in_progress"
   const isAppointmentCompleted = appointment.status === "completed"
   const petName = appointment.pets?.name || "Unknown Pet"
@@ -781,11 +788,12 @@ export default function AppointmentDetailPage() {
             <CardFooter className="justify-between border-t pt-6">
               {isAppointmentPending && (
                 <div className="flex flex-wrap gap-3 w-full">
-                  <AlertDialog>
+                  <AlertDialog open={showDeclineDialog} onOpenChange={setShowDeclineDialog}>
                     <AlertDialogTrigger asChild>
                       <Button 
                         variant="outline" 
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        disabled={actionLoading}
                       >
                         <XCircle className="mr-2 h-4 w-4" />
                         Decline Appointment
@@ -795,17 +803,25 @@ export default function AppointmentDetailPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Decline This Appointment?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to decline this appointment? This action cannot be undone.
+                          Please provide a reason for declining this appointment. This will be sent to the pet owner.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
+                      <div className="my-4">
+                        <Textarea
+                          placeholder="Enter reason for declining..."
+                          value={declineMessage}
+                          onChange={(e) => setDeclineMessage(e.target.value)}
+                          className="min-h-[100px]"
+                        />
+                      </div>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel disabled={actionLoading}>Cancel</AlertDialogCancel>
                         <AlertDialogAction 
-                          className="bg-red-600 text-white hover:bg-red-700"
                           onClick={handleDeclineAppointment}
-                          disabled={actionLoading}
+                          disabled={!declineMessage.trim() || actionLoading}
+                          className="bg-red-600 hover:bg-red-700"
                         >
-                          {actionLoading ? "Declining..." : "Yes, Decline"}
+                          {actionLoading ? "Declining..." : "Decline Appointment"}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

@@ -88,30 +88,107 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   // Handler functions for vet actions
   const handleAcceptJob = async (appointmentId: string) => {
     try {
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Error",
+          description: "No active session. Please log in again.",
+          variant: "destructive",
+        });
+        return;
+      }
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, action: 'accept' })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          appointmentId: appointmentId,
+          action: 'accept'
+        }),
       });
-      if (response.ok) {
-        window.location.reload();
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to accept appointment');
       }
-    } catch (error) {
-      console.error('Error accepting job:', error);
+      toast({
+        title: "Success",
+        description: "Appointment accepted successfully",
+      });
+      if (typeof fetchAppointments === 'function') {
+        fetchAppointments();
+      }
+      if (setAppointments) {
+        setAppointments((prev: any[]) => 
+          prev.map(apt => 
+            apt.id === appointmentId 
+              ? { ...apt, status: 'confirmed', vet_id: session.user.id } 
+              : apt
+          )
+        );
+      }
+    } catch (error: any) {
+      console.error('Error accepting appointment:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to accept appointment",
+        variant: "destructive",
+      });
     }
   };
-  const handleDecline = async (appointmentId: string) => {
+  const handleDeclineJob = async (appointmentId: string, message: string) => {
     try {
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Error",
+          description: "No active session. Please log in again.",
+          variant: "destructive",
+        });
+        return;
+      }
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, action: 'decline' })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          appointmentId: appointmentId,
+          action: 'decline',
+          message: message || 'Appointment declined by veterinarian'
+        }),
       });
-      if (response.ok) {
-        window.location.reload();
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to decline appointment');
       }
-    } catch (error) {
-      console.error('Error declining job:', error);
+      toast({
+        title: "Success",
+        description: "Appointment declined successfully",
+      });
+      if (typeof fetchAppointments === 'function') {
+        fetchAppointments();
+      }
+      if (setAppointments) {
+        setAppointments((prev: any[]) => 
+          prev.map(apt => 
+            apt.id === appointmentId 
+              ? { ...apt, status: 'declined' } 
+              : apt
+          )
+        );
+      }
+    } catch (error: any) {
+      console.error('Error declining appointment:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to decline appointment",
+        variant: "destructive",
+      });
     }
   };
   const handleProposeNewTime = (appointment: any) => {
@@ -614,7 +691,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                       </Button>
                       <Button 
                         variant="outline" 
-                        onClick={() => handleDecline(appointment.id)} 
+                        onClick={() => handleDeclineJob(appointment.id, '')} 
                         className="flex-1"
                       >
                         Decline
@@ -655,7 +732,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                       </Button>
                       <Button 
                         variant="outline" 
-                        onClick={() => handleDecline(appointment.id)} 
+                        onClick={() => handleDeclineJob(appointment.id, '')} 
                         className="flex-1"
                       >
                         Decline
