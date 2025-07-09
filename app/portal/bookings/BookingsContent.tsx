@@ -198,7 +198,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     console.log('Time slot value:', appointment.time_slot);
     
     // Use the EXACT SAME LOGIC as the card uses to get the time slot
-    const timeSlot = appointment.time_slot || appointment.time || (appointment.services && appointment.services.time_slot) || 'No time slot';
+    const timeSlot = hasTimeSlot(appointment) ? appointment.time_slot : undefined;
     console.log('Extracted time slot:', timeSlot);
     
     // Create a complete appointment object with the time_slot
@@ -211,12 +211,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     setSelectedAppointment(completeAppointment);
     setShowProposeModal(true);
   };
-  const handleProposeTime = async (proposalData: {
-    proposedDate: string
-    proposedTimeRange: string
-    proposedExactTime?: string
-    message?: string
-  }) => {
+  const handleProposeTime = async (proposalData: { appointmentId: string; proposedDate: string; proposedTime: string; message?: string }) => {
     try {
       if (!selectedAppointment) {
         alert('No appointment selected');
@@ -230,8 +225,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         body: JSON.stringify({
           appointmentId: selectedAppointment.id,
           proposedDate: proposalData.proposedDate,
-          proposedTimeRange: proposalData.proposedTimeRange,
-          proposedExactTime: proposalData.proposedExactTime,
+          proposedTimeRange: proposalData.proposedTime,
           message: proposalData.message,
         }),
       });
@@ -564,7 +558,16 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     return time
   }
 
-
+  // Type guard for time_slot
+  function hasTimeSlot(obj: any): obj is { time_slot?: string } {
+    return (
+      obj &&
+      typeof obj === 'object' &&
+      !Array.isArray(obj) &&
+      'time_slot' in obj &&
+      (typeof obj.time_slot === 'string' || typeof obj.time_slot === 'undefined')
+    );
+  }
 
   const filteredAppointments = userRole === 'vet' ? getFilteredAppointments(appointmentsWithProposals) : getFilteredAppointments(appointments);
 
@@ -572,7 +575,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => {
     // Add debug logging for the card
     console.log('AppointmentCard - appointment data:', appointment);
-    console.log('Card time_slot:', appointment.time_slot);
+    console.log('Card time_slot:', hasTimeSlot(appointment) ? appointment.time_slot : undefined);
     console.log('Card time:', appointment.time);
     console.log('Card services:', appointment.services);
     
@@ -596,7 +599,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 </h3>
                 <p className="text-gray-600">
                   {/* Use the same logic as the modal will use */}
-                  {appointment.time_slot || appointment.time || (appointment.services && appointment.services.time_slot) || 'No time slot'}
+                  {hasTimeSlot(appointment) ? appointment.time_slot : undefined}
                 </p>
               </div>
               <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
