@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from "@/components/ui/switch"
 import { Calendar, Clock, Loader2, AlertCircle } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { supabase } from '@/lib/supabase'
 
 interface ProposeTimeModalProps {
   isOpen: boolean
@@ -196,32 +197,66 @@ export function ProposeTimeModal({
     || (selectedTimeSlot && selectedTimeSlot !== normalizeTimeFormat(appointment?.time_slot || ''));
   // Handle form submission
   const handleSubmit = async () => {
-    if (!proposedDate || (!selectedTimeSlot && !exactTime)) {
+    if (!proposedDate || !selectedTimeSlot) {
       toast({
         title: "Error",
-        description: "Please select a date and time",
+        description: "Please select both a date and time slot",
         variant: "destructive",
       });
       return;
     }
-    setIsSubmitting(true);
+
     try {
-      await onSubmit({
-        appointmentId: appointment.id,
-        proposedDate,
-        proposedTime: useExactTime ? exactTime : selectedTimeSlot,
-        message
+      // Get the session for authorization
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast({
+          title: "Error",
+          description: "No active session. Please log in again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Use the same endpoint as Accept/Decline
+      const response = await fetch('/api/vet/appointment-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          appointmentId: appointment.id,
+          action: 'propose',
+          proposedDate: proposedDate,
+          proposedTime: selectedTimeSlot,
+          message: message || ''
+        }),
       });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to propose new time');
+      }
+
+      toast({
+        title: "Success",
+        description: "New time proposed successfully",
+      });
+
+      // Call the onSubmit callback if provided
+      // (Removed, not needed)
+
       onClose();
-    } catch (error) {
-      console.error('Error proposing time:', error);
+    } catch (error: any) {
+      console.error('Error proposing new time:', error);
       toast({
         title: "Error",
-        description: "Failed to propose new time",
+        description: error.message || "Failed to propose new time",
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
   // Time slots configuration
