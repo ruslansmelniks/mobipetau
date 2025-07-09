@@ -282,15 +282,6 @@ export function ProposeTimeModal({
   console.log('Modal appointment at top:', appointment);
   console.log('Modal appointment keys:', appointment && Object.keys(appointment));
   console.log('Modal appointment.time_slot:', appointment && appointment.time_slot);
-  if (appointment) {
-    return (
-      <div style={{ padding: 32, background: '#fff', borderRadius: 8, margin: 32 }}>
-        <div>Time slot: {String(appointment.time_slot)}</div>
-        <div>Time of day: {String(appointment.time_of_day)}</div>
-        <div>All keys: {JSON.stringify(Object.keys(appointment))}</div>
-      </div>
-    );
-  }
   if (!appointment) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>

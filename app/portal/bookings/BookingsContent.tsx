@@ -871,19 +871,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
             setShowProposeModal(false);
             setSelectedAppointment(null);
           }}
-          appointment={{
-            id: selectedAppointment.id || '',
-            date: selectedAppointment.date || '',
-            time: selectedAppointment.time || '',
-            time_of_day: selectedAppointment.time_of_day || '',
-            address: selectedAppointment.address || '',
-            notes: selectedAppointment.notes || '',
-            pets: selectedAppointment.pets,
-            users: selectedAppointment.vet ? {
-              first_name: selectedAppointment.vet.first_name || '',
-              last_name: selectedAppointment.vet.last_name || ''
-            } : undefined
-          }}
+          appointment={selectedAppointment}
           onSubmit={handleProposeTime}
         />
       )}
