@@ -671,6 +671,18 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 </p>
               </div>
             )}
+            {/* In AppointmentCard, for pet owners, show indicator if userProposal is pending */}
+            {userRole === 'pet_owner' && appointment.userProposal && appointment.userProposal.status === 'pending' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                  New time proposed by your vet
+                </span>
+                <div className="text-sm mt-1">
+                  Proposed: {appointment.userProposal.proposed_date} - {appointment.userProposal.proposed_time_range}
+                  {appointment.userProposal.proposed_exact_time && ` at ${appointment.userProposal.proposed_exact_time}`}
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               {appointment.pets && (
                 <p className="text-gray-700">

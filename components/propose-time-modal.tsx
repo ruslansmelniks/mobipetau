@@ -242,8 +242,9 @@ export function ProposeTimeModal({
       }
 
       toast({
-        title: "Success",
-        description: "New time proposed successfully",
+        title: "Proposal sent",
+        description: `A new time proposal has been sent to ${appointment.pet_owner?.first_name || 'the pet owner'} for confirmation.`,
+        variant: "default",
       });
 
       // Call the onSubmit callback if provided
