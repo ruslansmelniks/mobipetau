@@ -29,7 +29,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [activeTab, setActiveTab] = useState('incoming')
   const fetchingRef = useRef(false)
   const [proposeModalOpen, setProposeModalOpen] = useState(false)
-  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithDetails | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
   const [proposals, setProposals] = useState<any[]>([])
   const [proposalsLoading, setProposalsLoading] = useState(false)
   const [proposalsError, setProposalsError] = useState<string | null>(null)
@@ -192,6 +192,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
   };
   const handleProposeNewTime = (appointment: any) => {
+    // Pass the full appointment object directly
     setSelectedAppointment(appointment);
     setShowProposeModal(true);
   };
@@ -201,8 +202,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     proposedExactTime?: string
     message?: string
   }) => {
-    console.log('Submitting proposal with data:', proposalData);
-    console.log('Selected appointment:', selectedAppointment);
     try {
       if (!selectedAppointment) {
         alert('No appointment selected');
@@ -221,13 +220,10 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           message: proposalData.message,
         }),
       });
-      console.log('Response status:', response.status);
-      const responseData = await response.json();
-      console.log('Response data:', responseData);
       if (!response.ok) {
+        const responseData = await response.json();
         throw new Error(`HTTP error! status: ${response.status}, message: ${responseData.error || 'Unknown error'}`);
       }
-      console.log('Proposal submitted successfully');
       setShowProposeModal(false);
       setSelectedAppointment(null);
       window.location.reload();
@@ -259,7 +255,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         .from('appointments')
         .select('status, id')
         .limit(10);
-      console.log('All appointment statuses in database:', allStatuses);
       // Fetch appointments as before
       let apptData: any[] = [];
       let error: any = null;
@@ -268,8 +263,23 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           .from('appointments')
           .select(`
             *,
-            pets!appointments_pet_id_fkey(id, name, type, breed, image),
-            users!appointments_pet_owner_id_fkey(id, first_name, last_name, email, phone)
+            time_slot,
+            pets:pet_id (
+              id,
+              name,
+              type,
+              breed,
+              image,
+              age,
+              weight
+            ),
+            pet_owner:pet_owner_id (
+              id,
+              first_name,
+              last_name,
+              email,
+              phone
+            )
           `)
           // .eq('status', 'requested') // Commented out
           .is('vet_id', null) // Only show jobs without a vet assigned
@@ -281,8 +291,23 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           .from('appointments')
           .select(`
             *,
-            pets!appointments_pet_id_fkey(id, name, type, breed, image),
-            users!appointments_pet_owner_id_fkey(id, first_name, last_name, email, phone)
+            time_slot,
+            pets:pet_id (
+              id,
+              name,
+              type,
+              breed,
+              image,
+              age,
+              weight
+            ),
+            pet_owner:pet_owner_id (
+              id,
+              first_name,
+              last_name,
+              email,
+              phone
+            )
           `)
           .eq('pet_owner_id', userId)
           .order('created_at', { ascending: false });
@@ -290,8 +315,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         error = err;
       }
       setAppointments(apptData);
-      console.log('Raw appointments from database:', apptData);
-      console.log('Appointments error:', error);
       // Fetch proposals for current vet
       if (userRole === 'vet') {
         const { data: proposals, error: proposalsError } = await supabase
@@ -299,8 +322,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           .select('*')
           .eq('vet_id', userId);
         setUserProposals(proposals || []);
-        console.log('User proposals from database:', proposals);
-        console.log('Proposals error:', proposalsError);
         // After fetching appointments and proposals, fix the merging:
         const mergeProposals = (appointments: any[], userProposals: any[], userId: string) => {
           return appointments?.map(apt => {
@@ -313,8 +334,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
               )[0];
             }
-            console.log(`Appointment ${apt.id} - Latest proposal:`, latestUserProposal);
-            console.log(`Appointment ${apt.id} - Total proposals found:`, userProposalsForThisAppt?.length || 0);
             return {
               ...apt,
               userProposal: latestUserProposal
@@ -322,7 +341,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           });
         };
         const merged = mergeProposals(apptData, proposals || [], userId);
-        console.log('Final merged appointments with proposals:', merged);
         setAppointmentsWithProposals(merged);
       } else {
         setAppointmentsWithProposals(apptData);
@@ -416,15 +434,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const confirmWithdrawProposal = async () => {
     if (!proposalToWithdraw) return;
     try {
-      console.log('Withdrawing proposal:', proposalToWithdraw.id);
       const response = await fetch(`/api/time-proposals/${proposalToWithdraw.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' }
       });
-      console.log('DELETE response status:', response.status);
-      const responseData = await response.json();
-      console.log('DELETE response data:', responseData);
       if (!response.ok) {
+        const responseData = await response.json();
         throw new Error(responseData.error || 'Failed to withdraw proposal');
       }
       setShowWithdrawModal(false);
@@ -450,7 +465,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const confirmCancelAppointment = async () => {
     if (!appointmentToCancel) return;
     try {
-      console.log('Cancelling appointment:', appointmentToCancel.id);
       const response = await fetch(`/api/appointments/${appointmentToCancel.id}`, {
         method: 'DELETE',
         headers: {
@@ -461,7 +475,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to cancel appointment');
       }
-      console.log('Appointment cancelled successfully');
       setShowCancelModal(false);
       setAppointmentToCancel(null);
       window.location.reload();
@@ -542,8 +555,6 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   // Reusable appointment card component
   const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => {
-    console.log('Appointment with proposal data:', appointment);
-    console.log('User proposal for this appointment:', appointment.userProposal);
     return (
       <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
         <div className="flex gap-4">
@@ -563,7 +574,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                   {formatDate(appointment.date)}
                 </h3>
                 <p className="text-gray-600">
-                  {appointment.time_slot || appointment.time || appointment.time_of_day}
+                  {/* Use the same logic as the modal will use */}
+                  {appointment.time_slot || appointment.time || (appointment.services && appointment.services.time_slot) || 'No time slot'}
                 </p>
               </div>
               <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>

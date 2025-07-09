@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -159,31 +159,31 @@ export function ProposeTimeModal({
   console.log('Appointment data in modal:', appointment);
   console.log('Pet data:', appointment?.pets);
   console.log('Owner data:', appointment?.pet_owner);
+  // Add debug useEffect
+  useEffect(() => {
+    if (appointment) {
+      console.log('Full appointment data:', appointment);
+      console.log('Time slot value:', appointment.time_slot);
+      console.log('Pet data:', appointment.pets);
+    }
+  }, [appointment]);
   // Pre-populate state with current appointment data
   const [proposedDate, setProposedDate] = useState(() => formatDateForInput(appointment?.date));
-  const [timeOfDay, setTimeOfDay] = useState(() => {
-    if (!appointment?.time_slot) return 'morning';
-    const timeStr = appointment.time_slot.toLowerCase();
-    if (timeStr.includes('am') || timeStr.includes('morning')) {
-      return 'morning';
-    } else if (timeStr.includes('pm')) {
-      const hour = parseInt(timeStr.split(':')[0]);
-      if (hour === 12 || (hour >= 1 && hour < 6)) {
-        return 'afternoon';
-      }
-      return 'evening';
-    }
-    return 'afternoon';
-  });
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState(() => normalizeTimeFormat(appointment?.time_slot || ''));
+  const [timeOfDay, setTimeOfDay] = useState('morning');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState('');
+  // Add debug logs after state declarations
+  console.log('Modal appointment:', appointment);
+  console.log('Modal selectedTimeSlot:', selectedTimeSlot);
+  console.log('Modal timeOfDay:', timeOfDay);
   const [exactTime, setExactTime] = useState('');
   const [useExactTime, setUseExactTime] = useState(false);
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Robust data access with fallbacks
-  const petName = appointment?.pets?.name 
-    || appointment?.pet_name 
-    || 'Not specified';
+  const petName = typeof appointment?.pets?.name === 'string' ? appointment.pets.name : 'Not specified';
+  const petImage = appointment?.pets && typeof appointment.pets === 'object' && 'image' in appointment.pets && typeof appointment.pets.image === 'string' ? appointment.pets.image : null;
+  const petType = appointment?.pets && typeof appointment.pets === 'object' && 'type' in appointment.pets && typeof appointment.pets.type === 'string' ? appointment.pets.type : '';
+  const petBreed = appointment?.pets && typeof appointment.pets === 'object' && 'breed' in appointment.pets && typeof appointment.pets.breed === 'string' ? appointment.pets.breed : '';
   const ownerName = appointment?.pet_owner 
     ? `${appointment.pet_owner.first_name || ''} ${appointment.pet_owner.last_name || ''}`.trim()
     : appointment?.owner_name 
@@ -242,6 +242,55 @@ export function ProposeTimeModal({
     ]
   };
   const currentSlots = timeSlots[timeOfDay] || [];
+  // Add pre-selection useEffect for time slot and time of day
+  useEffect(() => {
+    if (appointment?.time_slot) {
+      const slot = appointment.time_slot.trim();
+      console.log('Pre-selecting time slot:', slot);
+      // Detect which time period this slot belongs to
+      if (["06:00 - 08:00 AM", "08:00 - 10:00 AM", "10:00 - 12:00 PM"].includes(slot)) {
+        setTimeOfDay('morning');
+      } else if (["12:00 - 02:00 PM", "02:00 - 04:00 PM", "04:00 - 06:00 PM"].includes(slot)) {
+        setTimeOfDay('afternoon');
+      } else if (["06:00 - 08:00 PM", "08:00 - 10:00 PM"].includes(slot)) {
+        setTimeOfDay('evening');
+      }
+      setSelectedTimeSlot(slot);
+    }
+  }, [appointment]);
+  // Add useEffect to sync state with appointment prop
+  useEffect(() => {
+    if (appointment) {
+      console.log('useEffect running for appointment:', appointment);
+      if (appointment.time_of_day) {
+        setTimeOfDay(appointment.time_of_day);
+      }
+      if (appointment.time_slot) {
+        setSelectedTimeSlot(appointment.time_slot);
+      }
+    }
+  }, [appointment]);
+  // Debug logging for modal state
+  useEffect(() => {
+    console.log('=== PROPOSE TIME MODAL DEBUG ===');
+    console.log('Appointment data:', appointment);
+    console.log('Time slot:', appointment?.time_slot);
+    console.log('Current timeOfDay state:', timeOfDay);
+    console.log('Current selectedTimeSlot state:', selectedTimeSlot);
+  }, [appointment, timeOfDay, selectedTimeSlot]);
+  // Defensive logs and minimal test render at the top of the component
+  console.log('Modal appointment at top:', appointment);
+  console.log('Modal appointment keys:', appointment && Object.keys(appointment));
+  console.log('Modal appointment.time_slot:', appointment && appointment.time_slot);
+  if (appointment) {
+    return (
+      <div style={{ padding: 32, background: '#fff', borderRadius: 8, margin: 32 }}>
+        <div>Time slot: {String(appointment.time_slot)}</div>
+        <div>Time of day: {String(appointment.time_of_day)}</div>
+        <div>All keys: {JSON.stringify(Object.keys(appointment))}</div>
+      </div>
+    );
+  }
   if (!appointment) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -269,9 +318,21 @@ export function ProposeTimeModal({
         <div className="space-y-2 mb-6 p-4 bg-gray-50 rounded-lg">
           <h3 className="font-semibold text-gray-900 mb-3">Appointment Details</h3>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="text-gray-500">Pet:</span>
-              <p className="font-medium">{petName}</p>
+            <div className="flex items-start space-x-3">
+              {petImage && (
+                <img 
+                  src={petImage} 
+                  alt={petName}
+                  className="w-12 h-12 rounded-full object-cover"
+                />
+              )}
+              <div>
+                <span className="text-gray-500">Pet:</span>
+                <p className="font-medium">{petName}</p>
+                {petType && petBreed && (
+                  <p className="text-xs text-gray-600">{petType} - {petBreed}</p>
+                )}
+              </div>
             </div>
             <div>
               <span className="text-gray-500">Owner:</span>
@@ -296,7 +357,9 @@ export function ProposeTimeModal({
             </div>
             <div>
               <span className="text-gray-500">Current Time:</span>
-              <p className="font-medium">{appointment?.time_slot || 'Not specified'}</p>
+              <p className="font-medium text-teal-600">
+                {appointment?.time_slot || appointment?.time || 'Not specified'}
+              </p>
             </div>
             <div>
               <span className="text-gray-500">Service:</span>
@@ -350,25 +413,37 @@ export function ProposeTimeModal({
             <div>
               <Label>Available time slots</Label>
               <div className="grid grid-cols-2 gap-3 mt-2">
-                {currentSlots.map((slot: string) => (
-                  <button
-                    key={slot}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTimeSlot(slot);
-                      setUseExactTime(false);
-                    }}
-                    className={`
-                      p-3 rounded-lg border text-sm font-medium transition-all
-                      ${selectedTimeSlot === slot && !useExactTime
-                        ? 'border-teal-500 bg-teal-50 text-teal-700' 
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }
-                    `}
-                  >
-                    {slot}
-                  </button>
-                ))}
+                {currentSlots.map((slot) => {
+                  console.log('Button slot:', slot, 'Selected:', selectedTimeSlot, 'Appointment time_slot:', appointment?.time_slot);
+                  const isSelected = selectedTimeSlot.trim() === slot.trim();
+                  const isCurrentAppointmentSlot = (appointment?.time_slot || '').trim() === slot.trim();
+                  return (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTimeSlot(slot);
+                        setUseExactTime(false);
+                      }}
+                      className={`
+                        p-3 rounded-lg border text-sm font-medium transition-all relative
+                        ${isSelected
+                          ? 'border-teal-500 bg-teal-50 text-teal-700 ring-2 ring-teal-500 ring-opacity-20' 
+                          : isCurrentAppointmentSlot
+                          ? 'border-orange-400 bg-orange-50 text-orange-700'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }
+                      `}
+                    >
+                      {slot}
+                      {isCurrentAppointmentSlot && (
+                        <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                          Current
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -125,6 +125,7 @@ export default function PaymentPage() {
       const is_in_perth = sessionStorage.getItem('booking_is_in_perth') === 'true';
       const latitude = sessionStorage.getItem('booking_latitude');
       const longitude = sessionStorage.getItem('booking_longitude');
+      const time_of_day = sessionStorage.getItem('booking_time_of_day') || '';
 
       if (!pet_id || !service_ids.length || !date || !time_slot || !address) {
         setError('Required booking information is missing. Please review the previous steps.');
@@ -154,6 +155,7 @@ export default function PaymentPage() {
           status: 'pending',
           date: date,
           time_slot: time_slot,
+          time_of_day: time_of_day, // <-- add this line
           address: address,
           additional_info: additional_info,
           notes: issueDescription,
