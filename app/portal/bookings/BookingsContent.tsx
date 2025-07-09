@@ -197,8 +197,18 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     console.log('Available fields:', Object.keys(appointment));
     console.log('Time slot value:', appointment.time_slot);
     
-    // Pass the full appointment object directly - it should already have time_slot
-    setSelectedAppointment(appointment);
+    // Use the EXACT SAME LOGIC as the card uses to get the time slot
+    const timeSlot = appointment.time_slot || appointment.time || (appointment.services && appointment.services.time_slot) || 'No time slot';
+    console.log('Extracted time slot:', timeSlot);
+    
+    // Create a complete appointment object with the time_slot
+    const completeAppointment = {
+      ...appointment,
+      time_slot: timeSlot
+    };
+    
+    console.log('Complete appointment with time_slot:', completeAppointment);
+    setSelectedAppointment(completeAppointment);
     setShowProposeModal(true);
   };
   const handleProposeTime = async (proposalData: {
