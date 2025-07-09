@@ -466,14 +466,8 @@ export function ProposeTimeModal({
             )}
           </div>
           {/* Time Change Indicator */}
-          {isTimeChanged && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-              <p className="text-sm text-orange-700 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-2" />
-                Different from original appointment time
-              </p>
-            </div>
-          )}
+          {/* Remove any JSX or logic that displays a warning or message about 'Different from original appointment time'.
+              Only keep the 'Current Time' display in the Appointment Details section. */}
           {/* Message */}
           <div>
             <Label>Message to Pet Owner (Optional)</Label>
