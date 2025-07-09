@@ -192,7 +192,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
   };
   const handleProposeNewTime = (appointment: any) => {
-    // Pass the full appointment object directly
+    // Add debug logging to see what data we have
+    console.log('handleProposeNewTime - appointment data:', appointment);
+    console.log('Available fields:', Object.keys(appointment));
+    console.log('Time slot value:', appointment.time_slot);
+    
+    // Pass the full appointment object directly - it should already have time_slot
     setSelectedAppointment(appointment);
     setShowProposeModal(true);
   };
@@ -555,6 +560,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   // Reusable appointment card component
   const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => {
+    // Add debug logging for the card
+    console.log('AppointmentCard - appointment data:', appointment);
+    console.log('Card time_slot:', appointment.time_slot);
+    console.log('Card time:', appointment.time);
+    console.log('Card services:', appointment.services);
+    
     return (
       <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
         <div className="flex gap-4">
