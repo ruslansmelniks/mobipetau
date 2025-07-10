@@ -494,7 +494,7 @@ export function NotificationBell() {
                     </div>
                   </div>
                   
-                  {userData?.role === 'vet' && notification.type === 'new_appointment' && (
+                  {userData?.role === 'vet' && notification.type === 'new_appointment' && notification.appointment_id && (
                     <div className="flex items-center justify-end space-x-2 mt-3">
                       <Button
                         size="sm"
@@ -537,6 +537,12 @@ export function NotificationBell() {
                         )}
                         Decline
                       </Button>
+                    </div>
+                  )}
+
+                  {userData?.role === 'vet' && notification.type === 'new_appointment' && !notification.appointment_id && (
+                    <div className="text-xs text-gray-500 italic mt-2">
+                      No appointment record found
                     </div>
                   )}
                   
