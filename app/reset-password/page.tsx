@@ -74,9 +74,9 @@ export default function ResetPasswordPage() {
           <Link href="#services" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Services
           </Link>
-          <Link href="#locations" className="text-sm font-medium text-gray-700 hover:text-teal-600">
-            Locations
-          </Link>
+                      <Link href="/locations" className="text-sm font-medium text-gray-700 hover:text-teal-600">
+              Locations
+            </Link>
           <Link href="#book" className="text-sm font-medium text-gray-700 hover:text-teal-600">
             Book appointment
           </Link>

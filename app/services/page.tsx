@@ -1,60 +1,62 @@
+"use client"
+
 import Image from "next/image"
 import Link from "next/link"
+import { useState } from "react"
+import { useUser } from "@/hooks/useSupabase"
+import { SmartLogo } from "@/components/smart-logo"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { SmartLogo } from "@/components/smart-logo"
+import { MobileMenu } from "@/components/mobile-menu"
+import { ProviderWaitlistDialog } from "@/components/provider-waitlist-dialog"
 
 export default function ServicesPage() {
+  const [isWaitlistDialogOpen, setIsWaitlistDialogOpen] = useState(false)
+  const { user } = useUser()
+  const navLinks = [
+    { href: "/services", label: "Services" },
+    { href: "/locations", label: "Locations" },
+    { href: user ? "/portal/bookings" : "/login", label: "Book appointment" },
+  ]
   return (
-    <div className="min-h-screen">
-      {/* Header section */}
-      <header className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="flex items-center">
+    <div className="min-h-screen flex flex-col">
+      <header className="container mx-auto flex h-16 items-center justify-between px-4 max-w-[1400px]">
+        <div className="flex items-center">
+          <Link href={user ? "/portal/bookings" : "/"} className="flex items-center">
             <SmartLogo />
           </Link>
-          <nav className="hidden md:flex items-center gap-8">
-            <Link href="/services" className="text-base font-medium text-gray-900">
-              Services
-            </Link>
-            <Link href="#" className="text-base font-medium text-gray-700">
-              Locations
-            </Link>
-            <Link href="/portal/bookings" className="text-base font-medium text-gray-700">
-              Book appointment
-            </Link>
-            <Link href="#" className="text-base font-medium text-gray-700">
-              Become a provider
-            </Link>
-          </nav>
-          <div className="hidden md:flex items-center gap-3">
-            <Link href="/login" className="text-base font-medium text-gray-700">
-              Log in
-            </Link>
-            <Link href="/signup">
-              <Button size="sm" className="bg-[#4e968f] hover:bg-[#43847e]">
-                Sign up
-              </Button>
-            </Link>
-          </div>
-          <button className="md:hidden">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="4" x2="20" y1="12" y2="12" />
-              <line x1="4" x2="20" y1="6" y2="6" />
-              <line x1="4" x2="20" y1="18" y2="18" />
-            </svg>
-          </button>
         </div>
+        <nav className="hidden md:flex items-center space-x-8">
+          {navLinks.map((link) => (
+            <Link key={link.href} href={link.href} className="text-sm font-medium text-gray-700 hover:text-teal-600">
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="hidden md:flex items-center space-x-4">
+          <button
+            onClick={() => setIsWaitlistDialogOpen(true)}
+            className="text-sm font-medium text-gray-700 hover:text-teal-600"
+          >
+            Become a provider
+          </button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-[#fcfcfd] border-[#d0d5dd] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)] hover:bg-gray-50"
+            asChild
+          >
+            <Link href="/login">Log in</Link>
+          </Button>
+          <Button
+            size="sm"
+            className="bg-[#4e968f] hover:bg-[#43847e] border border-[#43847e] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.1)]"
+            asChild
+          >
+            <Link href="/signup">Sign up</Link>
+          </Button>
+        </div>
+        <MobileMenu links={navLinks} onOpenWaitlistDialog={() => setIsWaitlistDialogOpen(true)} />
       </header>
 
       <main>
@@ -483,6 +485,7 @@ export default function ServicesPage() {
           <p className="text-sm text-gray-500 text-center mt-4 md:hidden">© 2024 MobiPet. All rights reserved.</p>
         </div>
       </footer>
+      <ProviderWaitlistDialog open={isWaitlistDialogOpen} onOpenChange={setIsWaitlistDialogOpen} />
     </div>
   )
 }

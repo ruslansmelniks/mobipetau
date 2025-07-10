@@ -49,8 +49,8 @@ export default function LandingPage() {
 
   if (!user) {
     const navLinks = [
-      { href: "#services", label: "Services" },
-      { href: "#locations", label: "Locations" },
+      { href: "/services", label: "Services" },
+      { href: "/locations", label: "Locations" },
       { href: "#book", label: "Book appointment" },
     ];
     const testimonials = [
