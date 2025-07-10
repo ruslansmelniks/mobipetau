@@ -680,6 +680,74 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   const filteredAppointments = userRole === 'vet' ? getFilteredAppointments(appointmentsWithProposals) : getFilteredAppointments(appointments);
 
+  // Debug functions for testing
+  const clearAllData = async () => {
+    try {
+      const response = await fetch('/api/debug/clear-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "All data cleared successfully",
+        });
+        // Refresh appointments
+        await fetchAppointments();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to clear data",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to clear data",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const createTestAppointment = async () => {
+    try {
+      const response = await fetch('/api/debug/create-test-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ petOwnerId: userId })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Test appointment created successfully",
+        });
+        // Refresh appointments
+        await fetchAppointments();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to create test appointment",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error creating test appointment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create test appointment",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Reusable appointment card component
   const AppointmentCard = ({ appointment }: { appointment: AppointmentWithDetails }) => {
     // Add debug logging for the card
@@ -963,6 +1031,34 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   return (
     <div className="space-y-6">
+      {/* Debug buttons for testing - only show for pet owners */}
+      {userRole === 'pet_owner' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+          <h3 className="text-lg font-semibold text-yellow-800 mb-2">🧪 Debug Tools</h3>
+          <div className="flex gap-2">
+            <Button
+              onClick={clearAllData}
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-300 hover:bg-red-50"
+            >
+              Clear All Data
+            </Button>
+            <Button
+              onClick={createTestAppointment}
+              variant="outline"
+              size="sm"
+              className="text-green-600 border-green-300 hover:bg-green-50"
+            >
+              Create Test Appointment
+            </Button>
+          </div>
+          <p className="text-xs text-yellow-700 mt-2">
+            These buttons are for testing purposes only. Use them to quickly create test data or clear everything.
+          </p>
+        </div>
+      )}
+      
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="incoming">{userRole === 'vet' ? 'Available Jobs' : 'Incoming'}</TabsTrigger>
