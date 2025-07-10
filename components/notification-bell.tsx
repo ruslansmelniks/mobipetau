@@ -198,26 +198,42 @@ export function NotificationBell() {
   }, [dropdownOpen, user]);
 
   const fetchNotifications = async () => {
-    console.log('fetchNotifications called, user:', user);
+    console.log('Fetching notifications for user:', user?.id);
     if (!user) return;
     
     setLoading(true);
     try {
-      // First try the RPC function
-      console.log('Calling RPC with user_id:', user.id);
+      // Get user role first
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      
+      console.log('User role:', userData?.role);
+      
+      // Call RPC function
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('fetchnotificationswithdetails', { 
           user_id_param: user.id 
         });
       
-      console.log('RPC response:', { rpcData, rpcError });
+      console.log('Raw notifications from RPC:', rpcData);
       
       if (!rpcError && rpcData) {
-        // Use RPC data directly
-        console.log('Setting notifications:', rpcData);
-        console.log('Notifications is_read values:', rpcData.map((n: any) => ({ id: n.id, is_read: n.is_read })));
-        setNotifications(rpcData);
-        setUnreadCount(rpcData.filter((n: any) => !n.is_read && !n.read).length);
+        // Additional client-side filtering as backup
+        const userRole = userData?.role;
+        const filteredNotifications = rpcData.filter((notif: any) => {
+          if (userRole === 'vet') {
+            return ['new_appointment', 'appointment_cancelled', 'time_proposal_response', 'appointment_withdrawn'].includes(notif.type);
+          } else {
+            return ['appointment_accepted', 'appointment_declined', 'time_proposed', 'appointment_completed', 'invoice_ready'].includes(notif.type);
+          }
+        });
+        
+        console.log('Filtered notifications:', filteredNotifications);
+        setNotifications(filteredNotifications);
+        setUnreadCount(filteredNotifications.filter((n: any) => !n.is_read && !n.read).length);
       } else {
         console.error('RPC failed:', rpcError);
         setNotifications([]);

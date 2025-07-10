@@ -227,25 +227,37 @@ export default function VetJobsPage() {
   }, [user, supabase, fetchAllJobs]);
 
   const handleAcceptJob = async (jobId: string) => {
+    console.log('=== ACCEPT JOB START ===');
+    console.log('Job ID:', jobId);
+    
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Session:', session?.user?.id);
+      
       const response = await fetch('/api/vet/appointment-status', {
         method: 'POST',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
         },
         body: JSON.stringify({
           appointmentId: jobId,
-          status: 'confirmed',
-          action: 'accept'
+          action: 'accept',
         }),
       });
 
+      const result = await response.json();
+      console.log('API Response:', result);
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to accept job');
+        throw new Error(result.error || 'Failed to accept job');
       }
 
-      fetchAllJobs();
+      console.log('Job accepted successfully');
+      
+      // IMPORTANT: Refresh the jobs list
+      await fetchAllJobs();
+      
       toast({ title: 'Success', description: 'Job accepted successfully!', variant: 'default' });
     } catch (error) {
       console.error('Error accepting job:', error);

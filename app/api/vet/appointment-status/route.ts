@@ -9,43 +9,40 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  console.log('=== APPOINTMENT STATUS API DEBUG ===');
-  console.log('1. Headers:', Object.fromEntries(req.headers.entries()));
-  console.log('2. Method:', req.method);
+  console.log('=== VET APPOINTMENT STATUS API ===');
   try {
-    // Try to get the body first
     const body = await req.json();
-    console.log('3. Body:', body);
-    // Check for authorization header
+    console.log('Request body:', body);
+    
+    const { appointmentId, action, proposedTime, message } = body;
+    
+    // Get user from auth header
     const authHeader = req.headers.get('authorization');
-    console.log('4. Auth header:', authHeader);
-    // Check for custom headers from middleware
-    const userId = req.headers.get('x-user-id');
-    const userRole = req.headers.get('x-user-role');
-    console.log('5. Middleware headers:', { userId, userRole });
-    // Now let's see what's actually causing the 401
-    // Add your existing authentication code here but with more logging
-    // If you're using the auth header approach:
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('6. FAILING: No valid auth header');
-      return NextResponse.json({ error: 'Unauthorized - No auth header' }, { status: 401 });
-    }
-
-    if (!userId || userRole !== 'vet') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // Parse request body (already done above)
-    const { appointmentId, status, action, proposedTime, message } = body;
-
-    // Get appointment details first
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error('Auth error:', authError);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    console.log('Authenticated user:', user.id);
+    
+    // Get current appointment details
     const { data: appointment } = await supabaseAdmin
       .from('appointments')
       .select('*, pets:pet_id(name), pet_owner:pet_owner_id(*)')
       .eq('id', appointmentId)
       .single();
-
+      
+    console.log('Current appointment:', appointment);
+    
     if (!appointment) {
+      console.log('Appointment not found:', appointmentId);
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
     }
 
@@ -57,7 +54,7 @@ export async function POST(req: NextRequest) {
         newStatus = 'confirmed';
         updateData = { 
           status: newStatus,
-          vet_id: userId,
+          vet_id: user.id,
           accepted_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };

@@ -44,28 +44,36 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
   const getFilteredAppointments = (appointments: AppointmentWithDetails[]) => {
+    console.log('Filtering appointments:', appointments);
     const isVet = userRole === 'vet';
     
     switch (activeTab) {
       case 'incoming':
         if (isVet) {
+          // For vets: only show unassigned jobs
           return appointments.filter(appointment => 
-            appointment.status === 'waiting_for_vet' || 
-            appointment.status === 'requested' ||
-            appointment.status === 'proposed_time'
+            appointment.status === 'waiting_for_vet' && !appointment.vet_id
           );
         } else {
+          // For pet owners: show pending appointments
           return appointments.filter(appointment => 
-            ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
+            ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status) &&
+            appointment.pet_owner_id === userId
           );
         }
       case 'ongoing':
-        return appointments.filter(appointment => 
-          ['confirmed', 'accepted', 'in_progress', 'accepted'].includes(appointment.status)
-        );
+        // Both vets and owners see confirmed appointments
+        return appointments.filter(appointment => {
+          if (isVet) {
+            return appointment.status === 'confirmed' && appointment.vet_id === userId;
+          } else {
+            return appointment.status === 'confirmed' && appointment.pet_owner_id === userId;
+          }
+        });
       case 'past':
         return appointments.filter(appointment => 
-          ['completed', 'cancelled', 'rejected', 'declined'].includes(appointment.status)
+          ['completed', 'cancelled', 'rejected', 'declined'].includes(appointment.status) &&
+          (isVet ? appointment.vet_id === userId : appointment.pet_owner_id === userId)
         );
       default:
         return appointments;
@@ -577,6 +585,35 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     
     fetchAppointments()
   }, [userId, userRole, fetchAppointments])
+
+  // Add real-time subscription for appointment updates
+  useEffect(() => {
+    if (!userId) return;
+    
+    console.log('Setting up real-time subscription');
+    
+    const channel = supabase
+      .channel('appointments-changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'appointments',
+          filter: userRole === 'vet' 
+            ? `vet_id=eq.${userId}` 
+            : `pet_owner_id=eq.${userId}`
+        }, 
+        (payload) => {
+          console.log('Appointment change detected:', payload);
+          fetchAppointments();
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, userRole]);
 
   if (loading) {
     return (
