@@ -129,6 +129,7 @@ export function NotificationBell() {
   const { toast } = useToast()
   const supabase = useSupabaseClient()
   const { user } = useUser()
+  const [userData, setUserData] = useState<any>(null);
 
   console.log('NotificationBell user object:', user);
 
@@ -189,56 +190,118 @@ export function NotificationBell() {
     }
   }, [user, supabase, isEnabled])
 
-  // Add useEffect to call fetchNotifications when dropdown opens
+  // Updated userData fetch with better logging
   useEffect(() => {
-    if (dropdownOpen && user) {
-      console.log('Dropdown opened, calling fetchNotifications');
-      fetchNotifications();
-    }
-  }, [dropdownOpen, user]);
-
-  const fetchNotifications = async () => {
-    console.log('Fetching notifications for user:', user?.id);
-    if (!user) return;
-    
-    setLoading(true);
-    try {
-      // Get user role first
-      const { data: userData, error: userError } = await supabase
+    const fetchUserData = async () => {
+      if (!user || !user.id) return;
+      
+      console.log('NotificationBell fetching user data for:', user.id);
+      
+      const { data, error } = await supabase
         .from('users')
-        .select('role')
+        .select('*')
         .eq('id', user.id)
         .single();
       
-      console.log('User role:', userData?.role);
+      console.log('NotificationBell user data result:', { data, error });
       
-      // Call RPC function
-      const { data: rpcData, error: rpcError } = await supabase
+      if (data) {
+        setUserData(data);
+        // Also fetch notifications after user data is loaded
+        if (dropdownOpen) {
+          fetchNotifications();
+        }
+      }
+    };
+    
+    fetchUserData();
+  }, [user?.id, dropdownOpen]); // Add dropdownOpen to dependencies
+
+  // Updated useEffect to call fetchNotifications when dropdown opens
+  useEffect(() => {
+    console.log('NotificationBell effect - userData changed:', userData);
+    if (dropdownOpen && userData) {
+      fetchNotifications();
+    }
+  }, [dropdownOpen, userData]);
+
+  const fetchNotifications = async () => {
+    console.log('fetchNotifications called with:', {
+      sessionUserId: user?.id,
+      userData: userData,
+      userRole: userData?.role
+    });
+
+    if (!user?.id) {
+      console.log('No session user ID');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Test function to bypass filtering temporarily
+      const testFetch = async () => {
+        const { data } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('read', false);
+        
+        console.log('Direct test fetch:', data);
+        if (data) {
+          setNotifications(data);
+          return true;
+        }
+        return false;
+      };
+
+      // Try direct fetch first for testing
+      const testResult = await testFetch();
+      if (testResult) {
+        console.log('Test fetch successful, showing all notifications');
+        return;
+      }
+
+      // Don't wait for userData if we have a session
+      const { data, error } = await supabase
         .rpc('fetchnotificationswithdetails', { 
           user_id_param: user.id 
         });
-      
-      console.log('Raw notifications from RPC:', rpcData);
-      
-      if (!rpcError && rpcData) {
-        // Additional client-side filtering as backup
-        const userRole = userData?.role;
-        const filteredNotifications = rpcData.filter((notif: any) => {
-          if (userRole === 'vet') {
-            return ['new_appointment', 'appointment_cancelled', 'time_proposal_response', 'appointment_withdrawn'].includes(notif.type);
-          } else {
-            return ['appointment_accepted', 'appointment_declined', 'time_proposed', 'appointment_completed', 'invoice_ready'].includes(notif.type);
-          }
-        });
-        
-        console.log('Filtered notifications:', filteredNotifications);
-        setNotifications(filteredNotifications);
-        setUnreadCount(filteredNotifications.filter((n: any) => !n.is_read && !n.read).length);
-      } else {
-        console.error('RPC failed:', rpcError);
-        setNotifications([]);
-        setUnreadCount(0);
+
+      console.log('RPC Response:', { data, error });
+
+      if (error) {
+        console.error('RPC Error:', error);
+        return;
       }
+
+      if (!data) {
+        console.log('No data returned from RPC');
+        return;
+      }
+
+      // If userData is not loaded yet, show all notifications
+      if (!userData || !userData.role) {
+        console.log('No userData/role yet, showing all notifications');
+        setNotifications(data);
+        return;
+      }
+
+      // Filter based on role
+      const vetTypes = ['new_appointment', 'appointment_cancelled', 'time_proposal_response'];
+      const ownerTypes = ['appointment_accepted', 'appointment_declined', 'time_proposed', 'appointment_completed'];
+      
+      const filtered = data.filter((notif: any) => {
+        if (userData.role === 'vet') {
+          return vetTypes.includes(notif.type);
+        } else {
+          return ownerTypes.includes(notif.type);
+        }
+      });
+
+      console.log('Filtered notifications:', filtered);
+      setNotifications(filtered);
+      setUnreadCount(filtered.filter((n: any) => !n.is_read && !n.read).length);
     } catch (error) {
       console.error('Error in fetchNotifications:', error);
       setNotifications([]);
@@ -385,7 +448,7 @@ export function NotificationBell() {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-full border-none">
+      <DropdownMenuContent className="w-80" align="end">
         <DropdownMenuLabel>
           <div className="flex items-center">
             <Bell className="mr-2 h-4 w-4 text-primary" />
@@ -399,14 +462,11 @@ export function NotificationBell() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {loading ? (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
+          <div className="p-4 text-center">Loading notifications...</div>
         ) : notifications.length === 0 ? (
-          <DropdownMenuItem>
-            <X className="mr-2 h-4 w-4" />
+          <div className="p-4 text-center text-gray-500">
             No new notifications.
-          </DropdownMenuItem>
+          </div>
         ) : (
           <div className="max-h-80 overflow-y-auto">
             {notifications.map((notification) => (
