@@ -63,7 +63,7 @@ BEGIN
         NEW.date, 
         NEW.time_slot
       ),
-      'new_appointment',
+      'new_appointment', -- Always set type for vet
       NEW.id,
       'appointment'
     );

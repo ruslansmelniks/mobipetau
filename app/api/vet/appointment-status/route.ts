@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
           // Notify pet owner that appointment was accepted
           await createNotification({
             userId: appointment.pet_owner_id,
-            type: 'appointment_accepted',
+            type: 'appointment_accepted', // Correct type for pet owner
             message: `Your appointment for ${appointment.pets?.name} has been accepted by the veterinarian`,
             referenceId: appointmentId
           });
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
           // Notify pet owner that appointment was declined
           await createNotification({
             userId: appointment.pet_owner_id,
-            type: 'appointment_declined',
+            type: 'appointment_declined', // Correct type for pet owner
             message: `Your appointment for ${appointment.pets?.name} has been declined. Reason: ${message || 'No reason provided'}`,
             referenceId: appointmentId
           });
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
           // Notify pet owner about proposed time
           await createNotification({
             userId: appointment.pet_owner_id,
-            type: 'time_proposed',
+            type: 'time_proposed', // Correct type for pet owner
             message: `A new time has been proposed for your appointment with ${appointment.pets?.name}: ${proposedTime}`,
             referenceId: appointmentId
           });

@@ -17,6 +17,14 @@ export async function createNotification({
   referenceId: string;
   referenceType?: string;
 }) {
+  // Validate type is provided
+  if (!type) {
+    console.error('Notification type is required');
+    return;
+  }
+  
+  console.log('Creating notification:', { userId, type, message });
+
   // Get user role to determine if notification should be sent
   const { data: user } = await supabaseAdmin
     .from('users')

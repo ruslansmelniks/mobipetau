@@ -452,101 +452,104 @@ export default function VetJobsPage() {
   const ongoingJobs = filteredJobs.filter(job => job.status === 'confirmed');
   const pastJobs = filteredJobs.filter(job => job.status === 'completed' || job.status === 'cancelled' || job.status === 'declined');
 
-  const renderJobCard = (job: any, isAvailable: boolean = true) => (
-    <div key={job.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
-      <div className="flex items-start space-x-4">
-        {/* Pet Profile Picture */}
-        <div className="flex-shrink-0">
-          <img
-            src={job.pets?.image || '/default-pet-avatar.png'}
-            alt={job.pets?.name || 'Pet'}
-            className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
-          />
-        </div>
-        <div className="flex-1">
-          <div className="flex justify-between items-start mb-3">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                {job.date ? format(new Date(job.date), 'EEEE, MMMM d, yyyy') : 'No date'}
-              </h3>
-              <p className="text-sm text-gray-600">{job.time_slot}</p>
-            </div>
-            <span className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-              {job.status === 'waiting_for_vet' ? 'Waiting for vet' : job.status}
-            </span>
-          </div>
-          {/* Pet Information */}
-          <div className="mb-2">
-            <p className="text-sm font-medium text-gray-700">
-              Pet: {job.pets?.name} ({job.pets?.type})
-            </p>
-          </div>
-          {/* Owner Information */}
-          <div className="mb-2">
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Owner:</span> {job.pet_owner?.first_name} {job.pet_owner?.last_name}
-            </p>
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Contact:</span> {job.pet_owner?.phone || job.pet_owner?.email}
-            </p>
-          </div>
-          {/* Location */}
-          <div className="mb-2">
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Location:</span> {job.address}
-            </p>
-          </div>
-          {/* Services */}
-          <div className="mb-2">
-            <p className="text-sm font-medium text-gray-700 mb-1">Services:</p>
-            <ul className="list-disc list-inside text-sm text-gray-600">
-              {job.services?.map((service: any, index: number) => (
-                <li key={index}>{service.name}</li>
-              ))}
-            </ul>
-          </div>
-          {/* Total */}
-          <div className="mb-4">
-            <p className="text-lg font-semibold text-gray-900">
-              Total: ${job.total_price}
-            </p>
-          </div>
-          {/* Action Buttons */}
-          {isAvailable && (
-            <div className="flex space-x-3">
-              <button
-                onClick={() => handleAcceptJob(job.id)}
-                className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 font-medium transition-colors"
-              >
-                Accept Job
-              </button>
-              <button
-                onClick={() => handleDeclineJob(job.id)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
-              >
-                Decline
-              </button>
-              <button
-                onClick={() => handleProposeTime(job.id)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
-              >
-                Propose New Time
-              </button>
+  const renderJobCard = (job: any, isAvailable: boolean = true) => {
+    console.log('Vet JobCard - job data:', job);
+    return (
+      <div key={job.id} className="bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex gap-4">
+          {job.pets?.image && (
+            <div className="flex-shrink-0">
+              <img
+                src={job.pets.image}
+                alt={job.pets.name || 'Pet'}
+                className="w-16 h-16 rounded-full object-cover"
+              />
             </div>
           )}
-          {/* For Ongoing Jobs - Add Complete Button */}
-          {!isAvailable && job.status === 'confirmed' && (
-            <button
-              onClick={() => handleCompleteJob(job.id)}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium transition-colors"
-            >
-              Mark as Complete
-            </button>
-          )}
+          <div className="flex-1">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {job.date ? format(new Date(job.date), 'EEEE, MMMM d, yyyy') : 'No date'}
+                </h3>
+                <p className="text-gray-600">{job.time_slot}</p>
+              </div>
+              <span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">
+                {job.status === 'waiting_for_vet' ? 'Waiting for vet' : job.status}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {job.pets && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Pet:</span> {job.pets.name} ({job.pets.type})
+                </p>
+              )}
+              {job.address && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Location:</span> {job.address}
+                </p>
+              )}
+              {job.services && (
+                <div className="text-gray-700">
+                  <span className="font-medium">Services:</span>
+                  <ul className="ml-5 mt-1 list-disc">
+                    {Array.isArray(job.services)
+                      ? job.services.map((service: any, index: number) => (
+                          <li key={index}>{service.name || service}</li>
+                        ))
+                      : <li>{String(job.services)}</li>
+                    }
+                  </ul>
+                </div>
+              )}
+              {job.total_price && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Total:</span> ${job.total_price}
+                </p>
+              )}
+              {job.notes && (
+                <p className="text-gray-700">
+                  <span className="font-medium">Notes:</span> {job.notes}
+                </p>
+              )}
+            </div>
+            {/* Action Buttons Section */}
+            {isAvailable && (
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => handleAcceptJob(job.id)}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium transition-colors"
+                >
+                  Accept Job
+                </button>
+                <button
+                  onClick={() => handleDeclineJob(job.id)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => handleProposeTime(job.id)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Propose New Time
+                </button>
+              </div>
+            )}
+            {/* For Ongoing Jobs - Add Complete Button */}
+            {!isAvailable && job.status === 'confirmed' && (
+              <button
+                onClick={() => handleCompleteJob(job.id)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium transition-colors mt-4"
+              >
+                Mark as Complete
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <ErrorBoundary>
@@ -627,7 +630,7 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : newJobs.length > 0 ? (
-              newJobs.map((job) => renderJobCard(job, true))
+              newJobs.map(job => renderJobCard(job, true))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No new jobs available</h2>
@@ -643,7 +646,7 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : ongoingJobs.length > 0 ? (
-              ongoingJobs.map((job) => renderJobCard(job, false))
+              ongoingJobs.map(job => renderJobCard(job, false))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No ongoing jobs</h2>
@@ -659,7 +662,7 @@ export default function VetJobsPage() {
                 <p className="text-gray-600">Loading jobs...</p>
               </div>
             ) : pastJobs.length > 0 ? (
-              pastJobs.map((job) => renderJobCard(job, false))
+              pastJobs.map(job => renderJobCard(job, false))
             ) : (
               <div className="bg-white rounded-lg border shadow-sm p-8 text-center">
                 <h2 className="text-xl font-semibold mb-2">No past jobs</h2>

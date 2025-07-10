@@ -196,7 +196,7 @@ export default function PaymentPage() {
             .single();
           const notifications = vets.map((vet: any) => ({
             user_id: vet.id,
-            type: 'new_appointment',
+            type: 'new_appointment', // Always set type for vet
             title: `New appointment for ${petData?.name || 'pet'} from ${petOwner?.full_name || 'owner'}`,
             message: `Appointment scheduled for ${appointment.date} at ${appointment.time_slot}`,
             appointment_id: appointment.id,
