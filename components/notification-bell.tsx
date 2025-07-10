@@ -239,29 +239,6 @@ export function NotificationBell() {
 
     setLoading(true);
     try {
-      // Test function to bypass filtering temporarily
-      const testFetch = async () => {
-        const { data } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('read', false);
-        
-        console.log('Direct test fetch:', data);
-        if (data) {
-          setNotifications(data);
-          return true;
-        }
-        return false;
-      };
-
-      // Try direct fetch first for testing
-      const testResult = await testFetch();
-      if (testResult) {
-        console.log('Test fetch successful, showing all notifications');
-        return;
-      }
-
       // Don't wait for userData if we have a session
       const { data, error } = await supabase
         .rpc('fetchnotificationswithdetails', { 
@@ -412,21 +389,44 @@ export function NotificationBell() {
     }
   };
 
+  const formatTimeAgo = (dateString: string | undefined) => {
+    if (!dateString) return 'just now';
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} minutes ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} days ago`;
+  };
+
   const formatNotificationMessage = (notification: any) => {
+    // If we have appointment_details from the RPC
     if (notification.appointment_details) {
-      const petName = notification.appointment_details.pet_name || 'Unknown Pet';
-      const ownerName = notification.appointment_details.pet_owner_name || 'Unknown Owner';
-      const date = notification.appointment_details.date 
-        ? new Date(notification.appointment_details.date).toLocaleDateString('en-US', { 
-            day: '2-digit', 
-            month: 'short', 
-            year: 'numeric' 
-          })
-        : 'No date';
-      const time = notification.appointment_details.time_slot || 'No time';
-      return `New appointment for ${petName} from ${ownerName}`;
+      const details = notification.appointment_details;
+      return {
+        title: notification.title || `New appointment for ${details.pet_name}`,
+        message: notification.message || `From ${details.pet_owner_name} on ${details.date} at ${details.time_slot}`,
+        time: notification.created_at
+      };
     }
-    return notification.message;
+    
+    // Fallback to basic notification data
+    return {
+      title: notification.title || 'New Appointment Request',
+      message: notification.message || 'New appointment request',
+      time: notification.created_at
+    };
+  };
+
+  const handleNotificationClick = (notification: any) => {
+    // Handle notification click - could navigate to appointment details
+    console.log('Notification clicked:', notification);
   };
 
   // Don't render if notifications are disabled
@@ -469,52 +469,54 @@ export function NotificationBell() {
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto">
-            {notifications.map((notification) => (
-              <DropdownMenuItem
-                key={notification.id}
-                className="cursor-pointer"
-              >
-                <div className="flex items-center">
-                  <Bell className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <p className="text-sm font-medium">{notification.title || formatNotificationMessage(notification)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {notification.appointment_details?.date || notification.created_at}
-                    </p>
+            {notifications.map((notification) => {
+              const { title, message, time } = formatNotificationMessage(notification);
+              const timeAgo = formatTimeAgo(time);
+              
+              return (
+                <div
+                  key={notification.id}
+                  className="p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 relative"
+                  onClick={() => handleNotificationClick(notification)}
+                >
+                  <div className="flex items-start space-x-3">
+                    <Bell className="h-5 w-5 text-gray-400 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {title}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {message}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {timeAgo}
+                      </p>
+                    </div>
+                    {userData?.role === 'vet' && notification.type === 'new_appointment' && (
+                      <div className="flex items-center space-x-2 ml-4">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-green-600 hover:text-green-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (notification.appointment_id) {
+                              handleAcceptJob(notification.appointment_id);
+                            }
+                          }}
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          Accept
+                        </Button>
+                      </div>
+                    )}
                   </div>
+                  {!notification.read && !notification.is_read && (
+                    <div className="absolute top-2 right-2 h-2 w-2 bg-blue-500 rounded-full" />
+                  )}
                 </div>
-                {notification.appointment_id && (
-                  <div className="ml-auto flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAcceptJob(notification.appointment_id as string)}
-                      disabled={loadingActions[notification.appointment_id as string] === 'accept'}
-                    >
-                      {loadingActions[notification.appointment_id as string] === 'accept' ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Check className="mr-2 h-4 w-4" />
-                      )}
-                      Accept
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeclineJob(notification.appointment_id as string)}
-                      disabled={loadingActions[notification.appointment_id as string] === 'decline'}
-                    >
-                      {loadingActions[notification.appointment_id as string] === 'decline' ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <X className="mr-2 h-4 w-4" />
-                      )}
-                      Decline
-                    </Button>
-                  </div>
-                )}
-              </DropdownMenuItem>
-            ))}
+              );
+            })}
           </div>
         )}
       </DropdownMenuContent>
