@@ -49,24 +49,23 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     switch (activeTab) {
       case 'incoming':
         if (isVet) {
-          // For vets: show jobs they can accept (waiting_for_vet) or jobs specifically assigned to them
           return appointments.filter(appointment => 
             appointment.status === 'waiting_for_vet' || 
-            (appointment.vet_id === userId && ['requested', 'pending', 'proposed_time'].includes(appointment.status))
+            appointment.status === 'requested' ||
+            appointment.status === 'proposed_time'
           );
         } else {
-          // For pet owners: show their pending appointments
           return appointments.filter(appointment => 
             ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status)
           );
         }
       case 'ongoing':
         return appointments.filter(appointment => 
-          ['confirmed', 'accepted'].includes(appointment.status)
+          ['confirmed', 'accepted', 'in_progress', 'accepted'].includes(appointment.status)
         );
       case 'past':
         return appointments.filter(appointment => 
-          ['completed', 'cancelled', 'rejected'].includes(appointment.status)
+          ['completed', 'cancelled', 'rejected', 'declined'].includes(appointment.status)
         );
       default:
         return appointments;
@@ -82,6 +81,44 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     }
     return timeString;
   };
+
+  // Add proposal status card component
+  const ProposalStatusCard = ({ appointment }: { appointment: any }) => {
+    if (appointment.status !== 'proposed_time' || !appointment.proposed_time) return null;
+
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            ⏰ Waiting for Response
+          </span>
+          {userRole === 'vet' && (
+            <button
+              onClick={() => handleWithdrawProposal(appointment.id)}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Withdraw Proposal
+            </button>
+          )}
+        </div>
+        <div className="space-y-1 text-sm">
+          <p className="font-medium text-gray-900">
+            Proposed: {appointment.proposed_time}
+          </p>
+          {appointment.proposed_message && (
+            <p className="text-gray-600">
+              Note: "{appointment.proposed_message}"
+            </p>
+          )}
+          <p className="text-xs text-gray-500">
+            Sent {new Date(appointment.proposed_at).toLocaleDateString()}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+
 
   const supabase = createClient();
 
@@ -436,9 +473,44 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   }
 
   // Add withdraw proposal handler
-  const handleWithdrawProposal = (proposal: any) => {
-    setProposalToWithdraw(proposal);
-    setShowWithdrawModal(true);
+  const handleWithdrawProposal = async (proposalOrAppointmentId: any) => {
+    // If it's a proposal object (from time_proposals table)
+    if (typeof proposalOrAppointmentId === 'object' && proposalOrAppointmentId.id) {
+      setProposalToWithdraw(proposalOrAppointmentId);
+      setShowWithdrawModal(true);
+      return;
+    }
+    
+    // If it's an appointment ID (from appointments table proposal)
+    if (typeof proposalOrAppointmentId === 'string') {
+      try {
+        const { error } = await supabase
+          .from('appointments')
+          .update({
+            status: 'requested',
+            proposed_time: null,
+            proposed_message: null,
+            proposed_at: null
+          })
+          .eq('id', proposalOrAppointmentId);
+
+        if (!error) {
+          toast({
+            title: "Success",
+            description: "Time proposal withdrawn",
+          });
+          // Refresh appointments
+          await fetchAppointments();
+        }
+      } catch (error) {
+        console.error('Error withdrawing proposal:', error);
+        toast({
+          title: "Error",
+          description: "Failed to withdraw proposal",
+          variant: "destructive",
+        });
+      }
+    }
   };
   const confirmWithdrawProposal = async () => {
     if (!proposalToWithdraw) return;
@@ -637,6 +709,8 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                 </div>
               </div>
             )}
+            {/* Appointment-level proposal status display */}
+            <ProposalStatusCard appointment={appointment} />
             {/* Proposal status display for vet */}
             {userRole === 'vet' && appointment.userProposal && appointment.userProposal.status === 'pending' && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
