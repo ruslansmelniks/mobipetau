@@ -30,12 +30,12 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
-    phone: '',
+    phoneNumber: '',
     licenseNumber: '',
-    yearsExperience: '',
+    yearsOfExperience: '',
     specialties: [] as string[],
     location: '',
-    bio: ''
+    professionalBio: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -68,7 +68,7 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
         },
         body: JSON.stringify({
           ...formData,
-          yearsExperience: formData.yearsExperience ? parseInt(formData.yearsExperience) : null
+          yearsOfExperience: formData.yearsOfExperience ? parseInt(formData.yearsOfExperience) : null
         }),
       })
 
@@ -83,12 +83,12 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
       setFormData({
         fullName: '',
         email: '',
-        phone: '',
+        phoneNumber: '',
         licenseNumber: '',
-        yearsExperience: '',
+        yearsOfExperience: '',
         specialties: [],
         location: '',
-        bio: ''
+        professionalBio: ''
       })
 
     } catch (error: any) {
@@ -165,12 +165,12 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="phone">Phone Number</Label>
+              <Label htmlFor="phoneNumber">Phone Number</Label>
               <Input
-                id="phone"
+                id="phoneNumber"
                 placeholder="+1 (555) 123-4567"
-                value={formData.phone}
-                onChange={(e) => handleInputChange('phone', e.target.value)}
+                value={formData.phoneNumber}
+                onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
               />
             </div>
             <div>
@@ -196,14 +196,12 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
               />
             </div>
             <div>
-              <Label htmlFor="yearsExperience">Years of Experience</Label>
+              <Label htmlFor="yearsOfExperience">Years of Experience</Label>
               <Input
-                id="yearsExperience"
-                type="number"
-                min="0"
+                id="yearsOfExperience"
                 placeholder="5"
-                value={formData.yearsExperience}
-                onChange={(e) => handleInputChange('yearsExperience', e.target.value)}
+                value={formData.yearsOfExperience}
+                onChange={(e) => handleInputChange('yearsOfExperience', e.target.value)}
               />
             </div>
           </div>
@@ -241,12 +239,12 @@ export function ProviderWaitlistDialog({ open, onOpenChange }: ProviderWaitlistD
 
           {/* Bio */}
           <div>
-            <Label htmlFor="bio">Professional Bio</Label>
+            <Label htmlFor="professionalBio">Professional Bio</Label>
             <Textarea
-              id="bio"
+              id="professionalBio"
               placeholder="Tell us about your experience, expertise, and what makes you passionate about veterinary care..."
-              value={formData.bio}
-              onChange={(e) => handleInputChange('bio', e.target.value)}
+              value={formData.professionalBio}
+              onChange={(e) => handleInputChange('professionalBio', e.target.value)}
               className="min-h-[100px]"
             />
           </div>

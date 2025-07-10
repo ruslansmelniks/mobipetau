@@ -1,117 +1,101 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { logger } from '@/lib/logger';
+import { NextResponse } from 'next/server';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const applicationData = await req.json();
+    const body = await request.json();
     
-    logger.info('Received vet waitlist application', { 
-      email: applicationData.email,
-      fullName: applicationData.fullName 
-    }, req);
+    console.log('Received vet waitlist submission:', body);
 
     // Validate required fields
-    if (!applicationData.fullName || !applicationData.email) {
+    const requiredFields = ['fullName', 'email', 'phoneNumber', 'location', 'licenseNumber', 'yearsOfExperience'];
+    const missingFields = requiredFields.filter(field => !body[field]);
+    
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { error: 'Full name and email are required' }, 
+        { error: `Missing required fields: ${missingFields.join(', ')}` },
         { status: 400 }
       );
     }
 
-    // Check if email already exists
-    const { data: existingApp, error: checkError } = await supabaseAdmin
-      .from('vet_applications')
-      .select('id, email')
-      .eq('email', applicationData.email)
-      .maybeSingle();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (checkError) {
-      logger.error('Error checking existing application', { error: checkError.message }, req);
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('Missing Supabase environment variables');
       return NextResponse.json(
-        { error: 'Failed to process application' },
+        { error: 'Server configuration error' },
         { status: 500 }
       );
     }
 
-    if (existingApp) {
-      return NextResponse.json(
-        { error: 'An application with this email already exists' },
-        { status: 409 }
-      );
-    }
-
-    // Insert the application
-    const { data: newApplication, error: insertError } = await supabaseAdmin
-      .from('vet_applications')
-      .insert({
-        full_name: applicationData.fullName,
-        email: applicationData.email,
-        phone: applicationData.phone || null,
-        license_number: applicationData.licenseNumber || null,
-        years_experience: applicationData.yearsExperience || null,
-        specialties: applicationData.specialties || [],
-        location: applicationData.location || null,
-        bio: applicationData.bio || null,
-        status: 'pending'
+    // Call the bypass function via REST API
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/insert_vet_waitlist_bypass`, {
+      method: 'POST',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        p_full_name: body.fullName,
+        p_email: body.email,
+        p_phone_number: body.phoneNumber,
+        p_location: body.location,
+        p_license_number: body.licenseNumber,
+        p_years_experience: parseInt(body.yearsOfExperience),
+        p_specialties: body.specialties || [],
+        p_bio: body.professionalBio || ''
       })
-      .select()
-      .single();
-
-    if (insertError) {
-      logger.error('Error inserting vet application', { error: insertError.message }, req);
-      return NextResponse.json(
-        { error: 'Failed to submit application' },
-        { status: 500 }
-      );
-    }
-
-    logger.info('Vet application submitted successfully', { 
-      applicationId: newApplication.id,
-      email: applicationData.email 
-    }, req);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Application submitted successfully',
-      applicationId: newApplication.id
     });
 
-  } catch (error: any) {
-    logger.error('Unexpected error in vet waitlist API', { error: error.message }, req);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
+    const responseText = await response.text();
+    console.log('Supabase response status:', response.status);
+    console.log('Supabase response:', responseText);
 
-export async function GET(req: NextRequest) {
-  try {
-    // Get all pending applications for admin dashboard
-    const { data: applications, error } = await supabaseAdmin
-      .from('vet_applications')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      logger.error('Error fetching vet applications', { error: error.message }, req);
+    if (!response.ok) {
+      console.error('Error response:', responseText);
       return NextResponse.json(
-        { error: 'Failed to fetch applications' },
+        { error: 'Failed to submit application' },
+        { status: response.status }
+      );
+    }
+
+    // Parse the result
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse response:', responseText);
+      return NextResponse.json(
+        { error: 'Invalid server response' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ applications });
+    // Check if the function returned success
+    if (result && result.success === false) {
+      return NextResponse.json(
+        { error: result.error || 'Failed to add to waitlist' },
+        { status: 400 }
+      );
+    }
 
-  } catch (error: any) {
-    logger.error('Unexpected error fetching applications', { error: error.message }, req);
+    console.log('Successfully created waitlist entry:', result);
+
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        message: 'Successfully added to waitlist', 
+        id: result.id || result.data?.id
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error processing vet waitlist submission:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to process application', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      },
       { status: 500 }
     );
   }
