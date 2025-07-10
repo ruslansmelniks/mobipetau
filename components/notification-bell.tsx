@@ -125,7 +125,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isEnabled, setIsEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [loadingActions, setLoadingActions] = useState<Record<string, string>>({})
+  const [loadingActions, setLoadingActions] = useState<Record<string, 'accept' | 'decline'>>({})
   const { toast } = useToast()
   const supabase = useSupabaseClient()
   const { user } = useUser()
@@ -480,9 +480,9 @@ export function NotificationBell() {
                   onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start space-x-3">
-                    <Bell className="h-5 w-5 text-gray-400 mt-0.5" />
+                    <Bell className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900">
                         {title}
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
@@ -492,27 +492,56 @@ export function NotificationBell() {
                         {timeAgo}
                       </p>
                     </div>
-                    {userData?.role === 'vet' && notification.type === 'new_appointment' && (
-                      <div className="flex items-center space-x-2 ml-4">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-green-600 hover:text-green-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (notification.appointment_id) {
-                              handleAcceptJob(notification.appointment_id);
-                            }
-                          }}
-                        >
-                          <Check className="h-4 w-4 mr-1" />
-                          Accept
-                        </Button>
-                      </div>
-                    )}
                   </div>
+                  
+                  {userData?.role === 'vet' && notification.type === 'new_appointment' && (
+                    <div className="flex items-center justify-end space-x-2 mt-3">
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        disabled={!!loadingActions[notification.appointment_id || '']}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (notification.appointment_id) {
+                            const appointmentId = notification.appointment_id;
+                            setLoadingActions(prev => ({ ...prev, [appointmentId]: 'accept' }));
+                            handleAcceptJob(appointmentId);
+                          }
+                        }}
+                      >
+                        {loadingActions[notification.appointment_id || ''] === 'accept' ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4 mr-1" />
+                        )}
+                        Accept
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-200 text-red-600 hover:bg-red-50"
+                        disabled={!!loadingActions[notification.appointment_id || '']}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (notification.appointment_id) {
+                            const appointmentId = notification.appointment_id;
+                            setLoadingActions(prev => ({ ...prev, [appointmentId]: 'decline' }));
+                            handleDeclineJob(appointmentId);
+                          }
+                        }}
+                      >
+                        {loadingActions[notification.appointment_id || ''] === 'decline' ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4 mr-1" />
+                        )}
+                        Decline
+                      </Button>
+                    </div>
+                  )}
+                  
                   {!notification.read && !notification.is_read && (
-                    <div className="absolute top-2 right-2 h-2 w-2 bg-blue-500 rounded-full" />
+                    <div className="absolute top-4 right-4 h-2 w-2 bg-blue-500 rounded-full" />
                   )}
                 </div>
               );
