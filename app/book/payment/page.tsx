@@ -114,6 +114,8 @@ export default function PaymentPage() {
     if (appointmentCreated.current) return;
 
     const createAppointmentAndLoadSummary = async () => {
+      console.log('[Appointment Creation] Starting appointment creation process...');
+      
       // Load all booking data from sessionStorage
       const pet_id = sessionStorage.getItem('booking_pet_id');
       const service_ids = JSON.parse(sessionStorage.getItem('booking_service_ids') || '[]');
@@ -133,6 +135,67 @@ export default function PaymentPage() {
         return;
       }
 
+      // Check for existing appointment with same details
+      console.log('[Appointment Creation] Checking for existing appointment...');
+      const { data: existingAppointment, error: checkError } = await supabase
+        .from('appointments')
+        .select('id, status, created_at')
+        .eq('pet_owner_id', user.id)
+        .eq('pet_id', pet_id)
+        .eq('date', date)
+        .eq('time_slot', time_slot)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('[Appointment Creation] Error checking existing appointment:', checkError);
+      }
+
+      if (existingAppointment) {
+        console.log('[Appointment Creation] Found existing appointment:', existingAppointment.id);
+        setAppointmentId(existingAppointment.id);
+        
+        // Load existing appointment data
+        const { data: petData } = await supabase
+          .from('pets')
+          .select('name, type')
+          .eq('id', pet_id)
+          .single();
+
+        // Service pricing map
+        const serviceMap: Record<string, { id: string; name: string; price: number }> = {
+          '1': { id: '1', name: 'After hours home visit', price: 299 },
+          '2': { id: '2', name: 'At-Home Peaceful Euthanasia', price: 599 },
+        };
+
+        const selectedServices = service_ids.map((id: string) => 
+          serviceMap[id] || { id, name: `Service ${id}`, price: 0 }
+        );
+        const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
+
+        setBookingSummary({
+          id: existingAppointment.id,
+          pet: petData,
+          services: selectedServices,
+          appointment: {
+            date: new Date(date).toLocaleDateString(),
+            time: time_slot,
+            address: address,
+            additionalInfo: additional_info,
+            issueDescription: issueDescription,
+          },
+          totalPrice: totalPrice,
+        });
+        
+        appointmentCreated.current = true;
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Appointment Creation] No existing appointment found, creating new one...');
+
       // Service pricing map
       const serviceMap: Record<string, { id: string; name: string; price: number }> = {
         '1': { id: '1', name: 'After hours home visit', price: 299 },
@@ -145,7 +208,7 @@ export default function PaymentPage() {
       );
       const totalPrice = selectedServices.reduce((sum: number, s: any) => sum + s.price, 0);
 
-      // Create or update appointment
+      // Create new appointment
       const { data: appointment, error: appointmentError } = await supabase
         .from('appointments')
         .insert({
@@ -155,7 +218,7 @@ export default function PaymentPage() {
           status: 'pending',
           date: date,
           time_slot: time_slot,
-          time_of_day: time_of_day, // <-- add this line
+          time_of_day: time_of_day,
           address: address,
           additional_info: additional_info,
           notes: issueDescription,
@@ -169,11 +232,13 @@ export default function PaymentPage() {
         .single();
 
       if (appointmentError) {
-        console.error('Error creating appointment:', appointmentError);
+        console.error('[Appointment Creation] Error creating appointment:', appointmentError);
         setError('Failed to create appointment. Please try again.');
         setLoading(false);
         return;
       }
+
+      console.log('[Appointment Creation] Successfully created appointment:', appointment.id);
 
       // Notify all available vets if no vet_id is present
       if (!appointment.vet_id) {
@@ -196,7 +261,7 @@ export default function PaymentPage() {
             .single();
           const notifications = vets.map((vet: any) => ({
             user_id: vet.id,
-            type: 'new_appointment', // Always set type for vet
+            type: 'new_appointment',
             title: `New appointment for ${petData?.name || 'pet'} from ${petOwner?.full_name || 'owner'}`,
             message: `Appointment scheduled for ${appointment.date} at ${appointment.time_slot}`,
             appointment_id: appointment.id,
@@ -266,15 +331,29 @@ export default function PaymentPage() {
         },
         totalPrice: totalPrice,
       });
+      
+      console.log('[Appointment Creation] Appointment creation process completed successfully');
       appointmentCreated.current = true;
     };
 
     createAppointmentAndLoadSummary();
-  }, [user, supabase]);
+    
+    // Cleanup function to prevent memory leaks
+    return () => {
+      console.log('[Appointment Creation] Component unmounting, cleaning up...');
+    };
+  }, [user]); // Removed supabase from dependencies to prevent re-runs
 
   const handlePayment = async () => {
     if (!bookingSummary || !appointmentId) return;
     
+    // Prevent double submission
+    if (isProcessingPayment) {
+      console.log('[Payment] Payment already in progress, ignoring duplicate click');
+      return;
+    }
+    
+    console.log('[Payment] Starting payment process for appointment:', appointmentId);
     setIsProcessingPayment(true);
     setError(null);
     
@@ -301,13 +380,15 @@ export default function PaymentPage() {
         throw new Error('No checkout URL received');
       }
 
+      console.log('[Payment] Redirecting to Stripe checkout:', url);
+      
       // Clear session storage before redirecting
       sessionStorage.clear();
       
       // Redirect to Stripe checkout
       window.location.href = url;
     } catch (err: any) {
-      console.error('Payment error:', err);
+      console.error('[Payment] Payment error:', err);
       setError(err.message || 'Failed to process payment. Please try again.');
       setIsProcessingPayment(false);
     }
@@ -368,7 +449,7 @@ export default function PaymentPage() {
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex items-center justify-between w-full">
-            <SmartLogo noLink />
+            <SmartLogo />
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="secondary">Cancel booking</Button>

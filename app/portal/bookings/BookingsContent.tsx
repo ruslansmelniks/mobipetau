@@ -41,29 +41,89 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
   const [proposalToWithdraw, setProposalToWithdraw] = useState<any>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<any>(null);
+  const [loadingActions, setLoadingActions] = useState<Record<string, 'accept' | 'decline' | 'propose'>>({});
+
+  // Function to mark notifications as read when viewing available jobs
+  const markNotificationsAsRead = async (appointmentIds: string[]) => {
+    if (userRole !== 'vet' || appointmentIds.length === 0) return;
+    
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ 
+          read: true, 
+          is_read: true,
+          read_at: new Date().toISOString()
+        })
+        .in('appointment_id', appointmentIds)
+        .eq('user_id', userId)
+        .eq('type', 'new_appointment');
+      
+      if (error) {
+        console.error('Error marking notifications as read:', error);
+      } else {
+        console.log('Marked notifications as read for appointments:', appointmentIds);
+      }
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
+  };
+
+  // Effect to mark notifications as read when viewing available jobs
+  useEffect(() => {
+    if (userRole === 'vet' && activeTab === 'incoming' && appointments.length > 0) {
+      const availableJobs = appointments.filter(appointment => 
+        appointment.status === 'waiting_for_vet' && !appointment.vet_id
+      );
+      
+      if (availableJobs.length > 0) {
+        const appointmentIds = availableJobs.map(job => job.id);
+        markNotificationsAsRead(appointmentIds);
+      }
+    }
+  }, [appointments, activeTab, userRole, userId]);
+
+  // Function to remove duplicate appointments
+  const removeDuplicates = (appointments: AppointmentWithDetails[]) => {
+    const seen = new Set();
+    return appointments.filter(appointment => {
+      const duplicate = seen.has(appointment.id);
+      seen.add(appointment.id);
+      return !duplicate;
+    });
+  };
 
   // Filter appointments based on active tab - MOVED BEFORE useEffect
   const getFilteredAppointments = (appointments: AppointmentWithDetails[]) => {
     console.log('Filtering appointments:', appointments);
     const isVet = userRole === 'vet';
     
+    // Remove duplicates first
+    const uniqueAppointments = removeDuplicates(appointments);
+    console.log('Unique appointments after deduplication:', uniqueAppointments);
+    
     switch (activeTab) {
       case 'incoming':
         if (isVet) {
           // For vets: only show unassigned jobs
-          return appointments.filter(appointment => 
+          const availableJobs = uniqueAppointments.filter(appointment => 
             appointment.status === 'waiting_for_vet' && !appointment.vet_id
           );
+          console.log('Available jobs for vet:', availableJobs);
+          console.log('Jobs with action buttons:', availableJobs.filter(job => 
+            job.status === 'waiting_for_vet' && !job.vet_id
+          ));
+          return availableJobs;
         } else {
           // For pet owners: show pending appointments
-          return appointments.filter(appointment => 
+          return uniqueAppointments.filter(appointment => 
             ['requested', 'pending', 'proposed_time', 'waiting_for_vet'].includes(appointment.status) &&
             appointment.pet_owner_id === userId
           );
         }
       case 'ongoing':
         // Both vets and owners see confirmed appointments
-        return appointments.filter(appointment => {
+        return uniqueAppointments.filter(appointment => {
           if (isVet) {
             return appointment.status === 'confirmed' && appointment.vet_id === userId;
           } else {
@@ -71,12 +131,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
           }
         });
       case 'past':
-        return appointments.filter(appointment => 
+        return uniqueAppointments.filter(appointment => 
           ['completed', 'cancelled', 'rejected', 'declined'].includes(appointment.status) &&
           (isVet ? appointment.vet_id === userId : appointment.pet_owner_id === userId)
         );
       default:
-        return appointments;
+        return uniqueAppointments;
     }
   };
 
@@ -132,6 +192,7 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
 
   // Handler functions for vet actions
   const handleAcceptJob = async (appointmentId: string) => {
+    setLoadingActions(prev => ({ ...prev, [appointmentId]: 'accept' }));
     try {
       // Get the current session
       const { data: { session } } = await supabase.auth.getSession();
@@ -180,6 +241,12 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
         title: "Error",
         description: error.message || "Failed to accept appointment",
         variant: "destructive",
+      });
+    } finally {
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[appointmentId];
+        return newState;
       });
     }
   };
@@ -755,9 +822,17 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
     console.log('Card time_slot:', hasTimeSlot(appointment) ? appointment.time_slot : undefined);
     console.log('Card time:', appointment.time);
     console.log('Card services:', appointment.services);
+    console.log('Card status:', appointment.status);
+    console.log('Card vet_id:', appointment.vet_id);
+    console.log('User role:', userRole);
+    console.log('Should show action buttons:', userRole === 'vet' && appointment.status === 'waiting_for_vet' && !appointment.vet_id);
     
     return (
-      <div key={appointment.id} className="bg-white p-6 rounded-lg shadow-sm border">
+      <div key={appointment.id} className={`bg-white p-6 rounded-lg shadow-sm border ${
+        userRole === 'vet' && appointment.status === 'waiting_for_vet' && !appointment.vet_id 
+          ? 'border-l-4 border-l-blue-500 bg-blue-50' 
+          : ''
+      }`}>
         <div className="flex gap-4">
           {appointment.pets?.image && (
             <div className="flex-shrink-0">
@@ -779,9 +854,17 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                   {hasTimeSlot(appointment) ? appointment.time_slot : undefined}
                 </p>
               </div>
-              <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
-                {formatStatus(appointment.status)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs ${getStatusColor(appointment.status)}`}>
+                  {formatStatus(appointment.status)}
+                </span>
+                {userRole === 'vet' && appointment.status === 'waiting_for_vet' && !appointment.vet_id && 
+                 new Date(appointment.created_at).getTime() > Date.now() - 24 * 60 * 60 * 1000 && (
+                  <span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800 font-medium">
+                    New
+                  </span>
+                )}
+              </div>
             </div>
             {/* Proposal Status Display */}
             {appointment.userProposal && (
@@ -913,22 +996,25 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                       <Button 
                         onClick={() => handleAcceptJob(appointment.id)} 
                         className="flex-1 bg-green-600 hover:bg-green-700"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Accept Job
+                        {loadingActions[appointment.id] === 'accept' ? 'Accepting...' : 'Accept Job'}
                       </Button>
                       <Button 
                         variant="outline" 
                         onClick={() => handleDeclineJob(appointment.id, '')} 
                         className="flex-1"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Decline
+                        {loadingActions[appointment.id] === 'decline' ? 'Declining...' : 'Decline'}
                       </Button>
                       <Button 
                         variant="outline" 
                         onClick={() => handleProposeNewTime(appointment)} 
                         className="flex-1"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Propose New Time
+                        {loadingActions[appointment.id] === 'propose' ? 'Proposing...' : 'Propose New Time'}
                       </Button>
                     </>
                   ) : appointment.userProposal.status === 'pending' ? (
@@ -937,8 +1023,9 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                       <Button 
                         onClick={() => handleAcceptJob(appointment.id)} 
                         className="flex-1 bg-green-600 hover:bg-green-700"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Accept Original Time
+                        {loadingActions[appointment.id] === 'accept' ? 'Accepting...' : 'Accept Original Time'}
                       </Button>
                       <Button 
                         variant="outline" 
@@ -954,22 +1041,25 @@ export default function BookingsContent({ userId, userRole }: { userId: string, 
                       <Button 
                         onClick={() => handleAcceptJob(appointment.id)} 
                         className="flex-1 bg-green-600 hover:bg-green-700"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Accept Job
+                        {loadingActions[appointment.id] === 'accept' ? 'Accepting...' : 'Accept Job'}
                       </Button>
                       <Button 
                         variant="outline" 
                         onClick={() => handleDeclineJob(appointment.id, '')} 
                         className="flex-1"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Decline
+                        {loadingActions[appointment.id] === 'decline' ? 'Declining...' : 'Decline'}
                       </Button>
                       <Button 
                         variant="outline" 
                         onClick={() => handleProposeNewTime(appointment)} 
                         className="flex-1"
+                        disabled={!!loadingActions[appointment.id]}
                       >
-                        Propose New Time
+                        {loadingActions[appointment.id] === 'propose' ? 'Proposing...' : 'Propose New Time'}
                       </Button>
                     </>
                   )}

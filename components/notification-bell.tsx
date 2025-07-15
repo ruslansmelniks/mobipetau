@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Bell, DollarSign, MapPin, Check, X, Loader2 } from "lucide-react"
+import { Bell, DollarSign, MapPin, Check, X, Loader2, Eye, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSupabaseClient, useUser } from "@/hooks/useSupabase"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -66,6 +68,7 @@ interface Notification {
   created_at: string;
   is_read: boolean;
   read?: boolean;
+  seen?: boolean;
   appointment_id?: string;
   appointment_details?: {
     id: string;
@@ -125,11 +128,16 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isEnabled, setIsEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [loadingActions, setLoadingActions] = useState<Record<string, 'accept' | 'decline'>>({})
+  const [loadingActions, setLoadingActions] = useState<Record<string, 'accept' | 'decline' | 'view' | 'propose'>>({})
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [appointmentInfo, setAppointmentInfo] = useState<Record<string, any>>({});
   const { toast } = useToast()
   const supabase = useSupabaseClient()
   const { user } = useUser()
   const [userData, setUserData] = useState<any>(null);
+  const router = useRouter();
 
   console.log('NotificationBell user object:', user);
 
@@ -189,6 +197,37 @@ export function NotificationBell() {
       clearInterval(interval)
     }
   }, [user, supabase, isEnabled])
+
+  // Fetch appointment info for notifications
+  useEffect(() => {
+    const fetchAppointmentInfo = async () => {
+      const appointmentIds = notifications
+        .filter(n => n.appointment_id)
+        .map(n => n.appointment_id);
+      
+      if (appointmentIds.length === 0) return;
+      
+      console.log('Fetching appointment info for:', appointmentIds);
+      
+      const { data } = await supabase
+        .from('appointments')
+        .select('id, address, total_price')
+        .in('id', appointmentIds);
+      
+      if (data) {
+        const infoMap = data.reduce((acc, apt) => {
+          acc[apt.id] = apt;
+          return acc;
+        }, {} as Record<string, any>);
+        setAppointmentInfo(infoMap);
+        console.log('Appointment info map:', infoMap);
+      }
+    };
+    
+    if (notifications.length > 0) {
+      fetchAppointmentInfo();
+    }
+  }, [notifications, supabase]);
 
   // Updated userData fetch with better logging
   useEffect(() => {
@@ -257,28 +296,18 @@ export function NotificationBell() {
         return;
       }
 
-      // If userData is not loaded yet, show all notifications
-      if (!userData || !userData.role) {
-        console.log('No userData/role yet, showing all notifications');
-        setNotifications(data);
-        return;
-      }
-
-      // Filter based on role
-      const vetTypes = ['new_appointment', 'appointment_cancelled', 'time_proposal_response'];
-      const ownerTypes = ['appointment_accepted', 'appointment_declined', 'time_proposed', 'appointment_completed'];
+      // Add debugging to see what we're getting
+      console.log('Raw notifications from RPC:', data);
+      console.log('User data:', userData);
       
-      const filtered = data.filter((notif: any) => {
-        if (userData.role === 'vet') {
-          return vetTypes.includes(notif.type);
-        } else {
-          return ownerTypes.includes(notif.type);
-        }
-      });
-
-      console.log('Filtered notifications:', filtered);
-      setNotifications(filtered);
-      setUnreadCount(filtered.filter((n: any) => !n.is_read && !n.read).length);
+      // The RPC function already filters by role and type, so we don't need additional filtering
+      // Just use the data as-is
+      console.log('Using all notifications from RPC (no additional filtering):', data);
+      setNotifications(data);
+      // Check for unread notifications - remove the seen check since the column doesn't exist
+      const unreadNotifications = data.filter((n: any) => !n.is_read && !n.read);
+      console.log('Unread notifications:', unreadNotifications);
+      setUnreadCount(unreadNotifications.length);
     } catch (error) {
       console.error('Error in fetchNotifications:', error);
       setNotifications([]);
@@ -316,7 +345,7 @@ export function NotificationBell() {
 
       toast({
         title: "Success",
-        description: "Job accepted successfully",
+        description: "Job accepted successfully! You can view it in your ongoing appointments.",
       });
       
       // Refresh notifications
@@ -367,7 +396,7 @@ export function NotificationBell() {
 
       toast({
         title: "Success",
-        description: "Job declined successfully",
+        description: "Job declined successfully. You can still view it in available jobs if needed.",
       });
       
       // Refresh notifications
@@ -425,8 +454,120 @@ export function NotificationBell() {
   };
 
   const handleNotificationClick = (notification: any) => {
-    // Handle notification click - could navigate to appointment details
+    // Handle notification click - navigate to appointment details
     console.log('Notification clicked:', notification);
+    
+    if (notification.type === 'new_appointment' && notification.appointment_id) {
+      // Mark as read
+      markNotificationAsRead(notification.id);
+      
+      // Navigate to the bookings page with the specific appointment highlighted
+      window.location.href = `/portal/bookings?tab=incoming&highlight=${notification.appointment_id}`;
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ 
+          read: true, 
+          is_read: true,
+          read_at: new Date().toISOString()
+        })
+        .eq('id', notificationId);
+      
+      if (error) {
+        console.error('Error marking notification as read:', error);
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const handleViewJobDetails = async (appointmentId: string, notificationId: string) => {
+    try {
+      // Mark notification as read
+      await markNotificationAsRead(notificationId);
+      
+      // Navigate to the bookings page with the specific appointment highlighted
+      router.push(`/portal/bookings?tab=incoming&highlight=${appointmentId}`);
+      
+      // Close the dropdown
+      setDropdownOpen(false);
+    } catch (error) {
+      console.error('Error viewing job details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to view job details",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[appointmentId];
+        return newState;
+      });
+    }
+  };
+
+  const handleProposeTime = async (appointmentId: string, notificationId: string) => {
+    try {
+      // Mark notification as read
+      await markNotificationAsRead(notificationId);
+      
+      // Navigate to the bookings page with propose modal open
+      router.push(`/portal/bookings?tab=incoming&propose=${appointmentId}`);
+      
+      // Close the dropdown
+      setDropdownOpen(false);
+    } catch (error) {
+      console.error('Error proposing time:', error);
+      toast({
+        title: "Error",
+        description: "Failed to open propose time modal",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingActions(prev => {
+        const newState = { ...prev };
+        delete newState[appointmentId];
+        return newState;
+      });
+    }
+  };
+
+  const fetchAppointmentDetails = async (appointmentId: string) => {
+    console.log('Fetching details for:', appointmentId);
+    setLoadingDetails(true);
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          pets (name, species, breed),
+          users!appointments_pet_owner_id_fkey (name, email, phone)
+        `)
+        .eq('id', appointmentId)
+        .single();
+      
+      console.log('Appointment details:', data);
+      
+      if (error) throw error;
+      
+      setSelectedAppointment(data);
+      setShowDetailsModal(true);
+      setDropdownOpen(false);  // Close the dropdown when modal opens
+    } catch (error) {
+      console.error('Error fetching appointment details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load appointment details",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingDetails(false);
+    }
   };
 
   // Don't render if notifications are disabled
@@ -435,7 +576,8 @@ export function NotificationBell() {
   }
 
   return (
-    <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+    <>
+      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -470,13 +612,26 @@ export function NotificationBell() {
         ) : (
           <div className="max-h-80 overflow-y-auto">
             {notifications.map((notification) => {
+              // Add debugging for notification details
+              console.log('Notification details:', {
+                id: notification.id,
+                type: notification.type,
+                appointment_id: notification.appointment_id,
+                message: notification.message,
+                appointment_details: notification.appointment_details
+              });
+              
               const { title, message, time } = formatNotificationMessage(notification);
               const timeAgo = formatTimeAgo(time);
               
               return (
                 <div
                   key={notification.id}
-                  className="p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 relative"
+                  className={`p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 relative ${
+                    !notification.read && !notification.is_read 
+                      ? 'bg-blue-50 border-l-4 border-l-blue-500' 
+                      : ''
+                  }`}
                   onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start space-x-3">
@@ -485,20 +640,50 @@ export function NotificationBell() {
                       <p className="text-sm font-medium text-gray-900">
                         {title}
                       </p>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-gray-600 mt-1">
                         {message}
                       </p>
+                      
+                      {/* Add location and price if available */}
+                      {(notification.appointment_id && appointmentInfo[notification.appointment_id]) && (
+                        <div className="mt-2 space-y-1">
+                          {appointmentInfo[notification.appointment_id].address && (
+                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {appointmentInfo[notification.appointment_id].address}
+                            </p>
+                          )}
+                          <p className="text-xs font-medium text-gray-700">
+                            Total: ${appointmentInfo[notification.appointment_id].total_price || 0}
+                          </p>
+                        </div>
+                      )}
+                      
                       <p className="text-xs text-gray-400 mt-1">
                         {timeAgo}
                       </p>
                     </div>
                   </div>
                   
-                  {userData?.role === 'vet' && notification.type === 'new_appointment' && notification.appointment_id && (
-                    <div className="flex items-center justify-end space-x-2 mt-3">
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white"
+                  {(() => {
+                    // Add debugging here
+                    console.log('Button check for notification:', {
+                      notificationId: notification.id,
+                      userRole: userData?.role,
+                      notificationType: notification.type,
+                      hasAppointmentId: !!notification.appointment_id,
+                      appointmentId: notification.appointment_id,
+                      shouldShowButtons: userData?.role === 'vet' && notification.type === 'new_appointment' && notification.appointment_id
+                    });
+                    return null;
+                  })()}
+                  
+                  {/* Icon-only action buttons */}
+                  {userData?.role === 'vet' && 
+                   notification.appointment_id && (
+                    <div className="mt-2 flex items-center justify-end gap-1">
+                      <button
+                        className="p-1.5 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors disabled:opacity-50"
                         disabled={!!loadingActions[notification.appointment_id || '']}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -508,18 +693,17 @@ export function NotificationBell() {
                             handleAcceptJob(appointmentId);
                           }
                         }}
+                        title="Accept Job"
                       >
                         {loadingActions[notification.appointment_id || ''] === 'accept' ? (
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <Check className="h-4 w-4 mr-1" />
+                          <Check className="h-4 w-4" />
                         )}
-                        Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-red-200 text-red-600 hover:bg-red-50"
+                      </button>
+                      
+                      <button
+                        className="p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-700 transition-colors disabled:opacity-50"
                         disabled={!!loadingActions[notification.appointment_id || '']}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -529,14 +713,53 @@ export function NotificationBell() {
                             handleDeclineJob(appointmentId);
                           }
                         }}
+                        title="Decline Job"
                       >
                         {loadingActions[notification.appointment_id || ''] === 'decline' ? (
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <X className="h-4 w-4 mr-1" />
+                          <X className="h-4 w-4" />
                         )}
-                        Decline
-                      </Button>
+                      </button>
+                      
+                      <button
+                        className="p-1.5 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700 transition-colors disabled:opacity-50"
+                        disabled={!!loadingActions[notification.appointment_id || ''] || loadingDetails}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('Eye icon clicked for appointment:', notification.appointment_id);
+                          if (notification.appointment_id) {
+                            fetchAppointmentDetails(notification.appointment_id);
+                          }
+                        }}
+                        title="View Details"
+                      >
+                        {(loadingActions[notification.appointment_id || ''] === 'view' || loadingDetails) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                      
+                      <button
+                        className="p-1.5 rounded-full bg-purple-100 hover:bg-purple-200 text-purple-700 transition-colors disabled:opacity-50"
+                        disabled={!!loadingActions[notification.appointment_id || '']}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (notification.appointment_id) {
+                            const appointmentId = notification.appointment_id;
+                            setLoadingActions(prev => ({ ...prev, [appointmentId]: 'propose' }));
+                            handleProposeTime(appointmentId, notification.id);
+                          }
+                        }}
+                        title="Propose New Time"
+                      >
+                        {loadingActions[notification.appointment_id || ''] === 'propose' ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Calendar className="h-4 w-4" />
+                        )}
+                      </button>
                     </div>
                   )}
 
@@ -552,9 +775,128 @@ export function NotificationBell() {
                 </div>
               );
             })}
+            
+            {/* Add "View All Jobs" link for vets */}
+            {userData?.role === 'vet' && notifications.length > 0 && (
+              <div className="border-t pt-3 mt-3">
+                <Link 
+                  href="/portal/bookings?tab=incoming"
+                  className="flex items-center justify-center text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  onClick={() => setDropdownOpen(false)}
+                >
+                  View All Available Jobs →
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+
+    {/* Job Details Modal */}
+    {showDetailsModal && selectedAppointment && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-xl font-semibold">Appointment Details</h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-500">Date & Time</p>
+                <p className="font-medium">
+                  {new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time_slot}
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">Pet</p>
+                <p className="font-medium">
+                  {selectedAppointment.pets?.name || 'Unknown'} ({selectedAppointment.pets?.species})
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">Owner</p>
+                <p className="font-medium">
+                  {selectedAppointment.users?.name || selectedAppointment.users?.email}
+                </p>
+                {selectedAppointment.users?.phone && (
+                  <p className="text-sm text-gray-600">{selectedAppointment.users.phone}</p>
+                )}
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">Location</p>
+                <p className="font-medium">{selectedAppointment.address || 'No address provided'}</p>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">Services</p>
+                {selectedAppointment.services?.map((service: any, index: number) => (
+                  <p key={index} className="font-medium">
+                    {service.name} - ${service.price}
+                  </p>
+                ))}
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="font-semibold text-lg">${selectedAppointment.total_price || 0}</p>
+              </div>
+              
+              {selectedAppointment.notes && (
+                <div>
+                  <p className="text-sm text-gray-500">Notes</p>
+                  <p className="text-sm">{selectedAppointment.notes}</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-6 space-y-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    handleAcceptJob(selectedAppointment.id);
+                  }}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors"
+                >
+                  Accept Job
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    handleDeclineJob(selectedAppointment.id);
+                  }}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded hover:bg-gray-400 transition-colors"
+                >
+                  Decline
+                </button>
+              </div>
+              
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  handleProposeTime(selectedAppointment.id, selectedAppointment.id);
+                }}
+                className="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded hover:bg-gray-400 transition-colors"
+              >
+                Propose New Time
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

@@ -8,14 +8,12 @@ export async function createNotification({
   userId,
   type,
   message,
-  referenceId,
-  referenceType = 'appointment'
+  referenceId
 }: {
   userId: string;
   type: string;
   message: string;
   referenceId: string;
-  referenceType?: string;
 }) {
   // Validate type is provided
   if (!type) {
@@ -70,8 +68,7 @@ export async function createNotification({
       user_id: userId,
       type,
       message,
-      reference_id: referenceId,
-      reference_type: referenceType,
+      appointment_id: referenceId,
       read: false
     });
 

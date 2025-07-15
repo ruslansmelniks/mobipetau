@@ -161,6 +161,39 @@ export default function AppointmentDetails() {
   // UI state
   const [loading, setLoading] = useState<boolean>(true)
   const [showPerthWarning, setShowPerthWarning] = useState<boolean>(false)
+  
+  // Debug logging for time slot filtering
+  useEffect(() => {
+    console.log('=== TIME SLOT FILTERING DEBUG ===');
+    console.log('Current timeOfDay:', timeOfDay);
+    console.log('All time slots:', timeSlots);
+    
+    // Define time slot categories
+    const morningSlots = [
+      '06:00 - 08:00 AM',
+      '08:00 - 10:00 AM', 
+      '10:00 AM - 12:00 PM'
+    ];
+    
+    const afternoonSlots = [
+      '12:00 - 02:00 PM',
+      '02:00 - 04:00 PM'
+    ];
+    
+    const eveningSlots = [
+      '04:00 - 06:00 PM',
+      '06:00 - 08:00 PM'
+    ];
+    
+    // Show which slots should be visible for each time period
+    timeSlots.forEach(slot => {
+      const isMorning = morningSlots.includes(slot);
+      const isAfternoon = afternoonSlots.includes(slot);
+      const isEvening = eveningSlots.includes(slot);
+      
+      console.log(`Slot: ${slot} - Morning: ${isMorning}, Afternoon: ${isAfternoon}, Evening: ${isEvening}`);
+    });
+  }, [timeOfDay]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -223,7 +256,7 @@ export default function AppointmentDetails() {
       <header className="bg-white border-b">
         <div className="container mx-auto max-w-[1400px] py-4 px-4">
           <div className="flex items-center justify-between w-full">
-            <SmartLogo noLink />
+            <SmartLogo />
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="secondary">Cancel booking</Button>
@@ -370,16 +403,37 @@ export default function AppointmentDetails() {
                   <Label className="text-base font-medium mb-2 block">Available time slots</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {timeSlots.map((slot) => {
-                      const [startTime] = slot.split(' - ');
-                      const hour = parseInt(startTime.split(':')[0]);
-                      const isMorning = hour < 10;
-                      const isAfternoon = hour >= 10 && hour < 17;
-                      const isEvening = hour >= 17;
-
+                      // Define time slot categories based on the exact slot names
+                      const morningSlots = [
+                        '06:00 - 08:00 AM',
+                        '08:00 - 10:00 AM', 
+                        '10:00 AM - 12:00 PM'
+                      ];
+                      
+                      const afternoonSlots = [
+                        '12:00 - 02:00 PM',
+                        '02:00 - 04:00 PM'
+                      ];
+                      
+                      const eveningSlots = [
+                        '04:00 - 06:00 PM',
+                        '06:00 - 08:00 PM'
+                      ];
+                      
+                      // Determine which period this slot belongs to
+                      const isMorning = morningSlots.includes(slot);
+                      const isAfternoon = afternoonSlots.includes(slot);
+                      const isEvening = eveningSlots.includes(slot);
+                      
+                      // Debug logging
+                      console.log(`Slot: ${slot}, isMorning: ${isMorning}, isAfternoon: ${isAfternoon}, isEvening: ${isEvening}, timeOfDay: ${timeOfDay}`);
+                      
                       const showSlot =
                         (timeOfDay === 'morning' && isMorning) ||
                         (timeOfDay === 'afternoon' && isAfternoon) ||
                         (timeOfDay === 'evening' && isEvening);
+                      
+                      console.log(`Show slot ${slot}: ${showSlot}`);
 
                       if (!showSlot) return null;
 
